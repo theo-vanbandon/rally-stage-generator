@@ -1,0 +1,93 @@
+/* src/components/RouteGenerator.css */
+
+.route-generator {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.route-generator h1 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 1.5rem;
+}
+
+.route-generator form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.route-generator label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  color: #555;
+}
+
+.route-generator input {
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.25rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border 0.2s;
+}
+
+.route-generator input:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.route-generator button {
+  padding: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background-color: #007bff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.route-generator button:hover {
+  background-color: #0056b3;
+}
+
+.map-container {
+  margin-top: 1.5rem;
+  height: 70vh;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+
+
+
+
+/* Loader */
+.loader-container {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+.loader {
+  border: 6px solid #f3f3f3; /* gris clair */
+  border-top: 6px solid #007bff; /* bleu */
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
