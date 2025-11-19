@@ -16,14 +16,37 @@ const PORT = process.env.PORT || 4000;
  * Geocode 
  */
 async function geocode(place, postal) {
-  const q = postal ? `${place} ${postal} France` : `${place} France`;
+  const q = `${place} France`;
   const url = "https://nominatim.openstreetmap.org/search";
+
+  // On demande plus de résultats
   const res = await axios.get(url, {
-    params: { q, format: "jsonv2", addressdetails: 1, limit: 1 },
+    params: {
+      q,
+      format: "jsonv2",
+      addressdetails: 1,
+      limit: 10
+    },
     headers: { "User-Agent": "rally-stage-generator/1.0" },
   });
-  if (!res.data || res.data.length === 0) throw new Error("Lieu non trouvé");
-  const { lat, lon } = res.data[0];
+
+  if (!res.data || res.data.length === 0) {
+    throw new Error("Lieu non trouvé");
+  }
+
+  let candidates = res.data;
+
+  if (postal) {
+    candidates = candidates.filter(
+      item => item.address && item.address.postcode == postal
+    );
+  }
+
+  if (candidates.length === 0) {
+    throw new Error("La ville et le code postal ne correspondent à aucun lieu connu");
+  }
+
+  const { lat, lon } = candidates[0];
   return { lat: parseFloat(lat), lon: parseFloat(lon) };
 }
 

@@ -7,13 +7,30 @@ export default function RouteGenerator() {
   const [postal, setPostal] = useState("");
   const [radiusKm, setRadiusKm] = useState(5);
   const [geojson, setGeojson] = useState(null);
-  const [loading, setLoading] = useState(false); // <-- état de chargement
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleGenerate = async () => {
-    if (!place) return;
+    setErrorMsg("");
 
-    setLoading(true); // début du chargement
-    setGeojson(null); // reset carte pendant le chargement
+    // --- Validation rapide (front-end) ---
+    if (!place.trim()) {
+      setErrorMsg("Veuillez entrer une ville.");
+      return;
+    }
+
+    if (!/^\d{5}$/.test(postal)) {
+      setErrorMsg("Veuillez entrer un code postal valide (5 chiffres).");
+      return;
+    }
+
+    if (radiusKm < 1 || radiusKm > 50) {
+      setErrorMsg("Le rayon doit être compris entre 1 km et 50 km.");
+      return;
+    }
+
+    setLoading(true);
+    setGeojson(null);
 
     try {
       const res = await fetch("http://localhost:4000/api/generate", {
@@ -25,18 +42,19 @@ export default function RouteGenerator() {
       const data = await res.json();
 
       if (data.ok) setGeojson(data.geojson);
-      else alert("Erreur : " + (data.error || "Unknown"));
+      else setErrorMsg(data.error || "Erreur inconnue.");
     } catch (err) {
       console.error(err);
-      alert("Erreur lors de la communication avec le backend.");
+      setErrorMsg("Impossible de communiquer avec le backend.");
     } finally {
-      setLoading(false); // fin du chargement
+      setLoading(false);
     }
   };
 
   return (
     <div className="route-generator">
       <h1>Rally Stage Generator</h1>
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -50,6 +68,7 @@ export default function RouteGenerator() {
             value={place}
             onChange={(e) => setPlace(e.target.value)}
             placeholder="Ex : Gap"
+            required
           />
         </label>
 
@@ -60,6 +79,8 @@ export default function RouteGenerator() {
             value={postal}
             onChange={(e) => setPostal(e.target.value)}
             placeholder="Ex : 05000"
+            pattern="\d{5}"
+            required
           />
         </label>
 
@@ -71,7 +92,9 @@ export default function RouteGenerator() {
             onChange={(e) => setRadiusKm(Number(e.target.value))}
             min={1}
             max={50}
+            required
           />
+          <small>Min : 1 km — Max : 50 km</small>
         </label>
 
         <button type="submit" disabled={loading}>
@@ -79,12 +102,17 @@ export default function RouteGenerator() {
         </button>
       </form>
 
+      {/* ---- Affichage erreur ---- */}
+      {errorMsg && <p className="error-message">{errorMsg}</p>}
+
+      {/* ---- Loader ---- */}
       {loading && (
         <div className="loader-container">
           <div className="loader"></div>
         </div>
       )}
 
+      {/* ---- Carte ---- */}
       {geojson && !loading && (
         <div className="map-container">
           <MapView geojson={geojson} />

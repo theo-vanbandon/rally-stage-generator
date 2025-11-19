@@ -91,3 +91,10 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+
+.error-message {
+  margin-top: 10px;
+  color: #cc0000;
+  font-weight: bold;
+}
