@@ -1,70 +1,123 @@
-# Getting Started with Create React App
+# 🎨 Rally Stage Generator - Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Interface utilisateur React pour le générateur de spéciales de rallye.
 
-## Available Scripts
+## 📋 Description
 
-In the project directory, you can run:
+Le frontend est une application React qui permet de :
+- Saisir les paramètres de génération (ville, code postal, rayon)
+- Visualiser le tracé sur une carte interactive
+- Afficher les Points Kilométriques (PK) aux intersections
+- Consulter les statistiques de la spéciale
+- Exporter le tracé en différents formats
 
-### `npm start`
+## 🏗️ Structure du projet
+```
+frontend/
+├── public/
+├── src/
+│   ├── components/
+│   │   ├── MapView/
+│   │   │   ├── MapView.jsx       # Carte Leaflet
+│   │   │   ├── MapView.css
+│   │   │   └── index.js
+│   │   ├── RouteGenerator/
+│   │   │   ├── RouteGenerator.jsx # Composant principal
+│   │   │   ├── RouteGenerator.css
+│   │   │   └── index.js
+│   │   └── SpecialeStats/
+│   │       ├── SpecialeStats.jsx  # Affichage des stats
+│   │       ├── SpecialeStats.css
+│   │       └── index.js
+│   ├── services/
+│   │   ├── api.js                 # Appels API backend
+│   │   ├── elevationService.js    # Service d'altitude
+│   │   └── exportService.js       # Export GeoJSON/KML/GPX
+│   ├── utils/
+│   │   ├── specialeStats.js       # Calcul des statistiques
+│   │   └── geometry.js            # Fonctions géométriques
+│   ├── App.js
+│   └── index.js
+├── package.json
+└── README.md
+```
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## 🚀 Installation
+```bash
+cd frontend
+npm install
+```
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## ⚙️ Configuration
 
-### `npm test`
+L'URL du backend est configurée dans `src/services/api.js` :
+```javascript
+const API_BASE_URL = "http://localhost:4000/api";
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## 🏃 Démarrage
+```bash
+npm start
+```
 
-### `npm run build`
+L'application démarre sur http://localhost:3000
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## 🧩 Composants
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### RouteGenerator
+Composant principal avec le formulaire de saisie et l'orchestration des autres composants.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### MapView
+Carte interactive Leaflet affichant :
+- Le tracé de la spéciale (ligne rouge)
+- Le marqueur de départ (rouge)
+- Le marqueur d'arrivée (bleu)
+- Les Points Kilométriques (badges bleus)
 
-### `npm run eject`
+### SpecialeStats
+Affiche les statistiques de la spéciale :
+- Longueur totale
+- Nombre d'intersections
+- Distance moyenne entre PK
+- Altitude min/max
+- Dénivelé positif/négatif
+- Pente moyenne
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## 🔧 Services
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+### api.js
+Gère les appels API vers le backend.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+### elevationService.js
+Récupère les données d'altitude via l'API Open-Elevation.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### exportService.js
+Exporte le tracé en :
+- **GeoJSON** : Format standard géospatial
+- **KML** : Compatible Google Earth
+- **GPX** : Compatible GPS et applications de navigation
 
-## Learn More
+## 📦 Dépendances
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+- `react` - Framework UI
+- `react-leaflet` / `leaflet` - Carte interactive
+- `@turf/turf` - Calculs géospatiaux
+- `axios` - Client HTTP
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## 🎨 Personnalisation
 
-### Code Splitting
+### Couleurs des marqueurs
+Les icônes sont définies dans `MapView.jsx` :
+- Départ : marqueur rouge
+- Arrivée : marqueur bleu
+- PK : badge bleu avec texte blanc
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+### Style de la carte
+Le style CSS est dans `MapView.css` et `RouteGenerator.css`.
 
-### Analyzing the Bundle Size
+## 🐛 Débogage
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Ouvrir la console du navigateur (F12) pour voir :
+- Les données GeoJSON reçues
+- Les intersections détectées
+- Les PK calculés avec leur distance
