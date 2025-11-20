@@ -10,12 +10,13 @@ import "./MapView.css";
 
 // Icônes Leaflet
 const startIcon = new L.Icon({
-  iconUrl: markerIconPng,
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
   shadowUrl: markerShadowPng,
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
   shadowSize: [41, 41],
+  className: "start-marker",
 });
 
 const endIcon = new L.Icon({
