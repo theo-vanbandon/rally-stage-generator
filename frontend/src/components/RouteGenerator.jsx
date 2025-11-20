@@ -1,3 +1,4 @@
+// src/components/RouteGenerator.jsx
 import React, { useState } from "react";
 import MapView from "./MapView";
 import "./RouteGenerator.css";
@@ -14,7 +15,6 @@ export default function RouteGenerator() {
   const handleGenerate = async () => {
     setErrorMsg("");
 
-    // --- Validation rapide (front-end) ---
     if (!place.trim()) {
       setErrorMsg("Veuillez entrer une ville.");
       return;
@@ -55,6 +55,71 @@ export default function RouteGenerator() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- Fonctions d'export ---
+  const exportGeoJSON = (geojsonData) => {
+    const blob = new Blob([JSON.stringify(geojsonData)], { type: "application/geo+json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "stage.geojson";
+    a.click();
+  };
+
+  const exportKML = (geojsonData) => {
+    if (!geojsonData.features) return;
+
+    let coordsList = [];
+    geojsonData.features.forEach(f => {
+      if (f.geometry.type === "LineString") {
+        coordsList.push(f.geometry.coordinates);
+      }
+    });
+
+    let kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><LineString><coordinates>`;
+
+    coordsList.forEach(coords => {
+      coords.forEach(([lon, lat]) => {
+        kml += `${lon},${lat},0 `;
+      });
+    });
+
+    kml += `</coordinates></LineString></Placemark></Document></kml>`;
+
+    const blob = new Blob([kml], { type: "application/vnd.google-earth.kml+xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "stage.kml";
+    a.click();
+  };
+
+  const exportGPX = (geojsonData) => {
+    if (!geojsonData.features) return;
+
+    let coordsList = [];
+    geojsonData.features.forEach(f => {
+      if (f.geometry.type === "LineString") {
+        coordsList.push(f.geometry.coordinates);
+      }
+    });
+
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RallyStageGenerator"><trk><name>Trace exportée</name><trkseg>`;
+
+    coordsList.forEach(coords => {
+      coords.forEach(([lon, lat]) => {
+        gpx += `<trkpt lat="${lat}" lon="${lon}"></trkpt>`;
+      });
+    });
+
+    gpx += `</trkseg></trk></gpx>`;
+
+    const blob = new Blob([gpx], { type: "application/gpx+xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "stage.gpx";
+    a.click();
   };
 
   return (
@@ -104,7 +169,7 @@ export default function RouteGenerator() {
         </label>
 
         <button type="submit" disabled={loading}>
-          {loading ? "Chargement..." : "Générer routes"}
+          {loading ? "Chargement..." : "Générer la spéciale"}
         </button>
       </form>
 
@@ -118,11 +183,26 @@ export default function RouteGenerator() {
         </div>
       )}
 
-      {/* ---- Carte ---- */}
+      {/* ---- Boutons d’export ---- */}
       {geojson && !loading && (
-        <div className="map-container">
-          <MapView geojson={geojson} intersections={intersections} />
-        </div>
+        <>
+          <div className="export-buttons">
+            <button type="button" onClick={() => exportGeoJSON(geojson)}>
+              Export GeoJSON
+            </button>
+            <button type="button" onClick={() => exportKML(geojson)}>
+              Export KML
+            </button>
+            <button type="button" onClick={() => exportGPX(geojson)}>
+              Export GPX
+            </button>
+          </div>
+
+          {/* ---- Carte ---- */}
+          <div className="map-container">
+            <MapView geojson={geojson} intersections={intersections} />
+          </div>
+        </>
       )}
     </div>
   );
