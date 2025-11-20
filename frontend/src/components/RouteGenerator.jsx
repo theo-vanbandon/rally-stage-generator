@@ -7,6 +7,7 @@ export default function RouteGenerator() {
   const [postal, setPostal] = useState("");
   const [radiusKm, setRadiusKm] = useState(5);
   const [geojson, setGeojson] = useState(null);
+  const [intersections, setIntersections] = useState(null);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -31,6 +32,7 @@ export default function RouteGenerator() {
 
     setLoading(true);
     setGeojson(null);
+    setIntersections(null);
 
     try {
       const res = await fetch("http://localhost:4000/api/generate", {
@@ -41,8 +43,12 @@ export default function RouteGenerator() {
 
       const data = await res.json();
 
-      if (data.ok) setGeojson(data.geojson);
-      else setErrorMsg(data.error || "Erreur inconnue.");
+      if (data.ok) {
+        setGeojson(data.geojson);
+        setIntersections(data.intersections);
+      } else {
+        setErrorMsg(data.error || "Erreur inconnue.");
+      }
     } catch (err) {
       console.error(err);
       setErrorMsg("Impossible de communiquer avec le backend.");
@@ -115,7 +121,7 @@ export default function RouteGenerator() {
       {/* ---- Carte ---- */}
       {geojson && !loading && (
         <div className="map-container">
-          <MapView geojson={geojson} />
+          <MapView geojson={geojson} intersections={intersections} />
         </div>
       )}
     </div>

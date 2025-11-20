@@ -1,0 +1,27 @@
+.pk-marker-container {
+  position: relative;
+  z-index: 1000 !important;
+}
+
+.pk-marker-label {
+  display: inline-block;        /* S’adapte automatiquement à la taille du texte */
+  background-color: #2196F3;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: bold;
+  white-space: nowrap;          /* Pas de retour à la ligne */
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+.pk-icon {
+  background: transparent !important;
+  border: none !important;
+  z-index: 1000 !important;
+}
+
+.leaflet-marker-pane .pk-icon {
+  z-index: 1000 !important;
+}

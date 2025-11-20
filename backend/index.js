@@ -13,19 +13,18 @@ app.use(cors());
 const PORT = process.env.PORT || 4000;
 
 /**
- * Geocode 
+ * Geocode
  */
 async function geocode(place, postal) {
   const q = `${place} France`;
   const url = "https://nominatim.openstreetmap.org/search";
 
-  // On demande plus de résultats
   const res = await axios.get(url, {
     params: {
       q,
       format: "jsonv2",
       addressdetails: 1,
-      limit: 10
+      limit: 10,
     },
     headers: { "User-Agent": "rally-stage-generator/1.0" },
   });
@@ -38,12 +37,14 @@ async function geocode(place, postal) {
 
   if (postal) {
     candidates = candidates.filter(
-      item => item.address && item.address.postcode == postal
+      (item) => item.address && item.address.postcode == postal
     );
   }
 
   if (candidates.length === 0) {
-    throw new Error("La ville et le code postal ne correspondent à aucun lieu connu");
+    throw new Error(
+      "La ville et le code postal ne correspondent à aucun lieu connu"
+    );
   }
 
   const { lat, lon } = candidates[0];
@@ -54,7 +55,6 @@ async function geocode(place, postal) {
  * Query Overpass
  */
 async function queryOverpass(lat, lon, radiusMeters) {
-
   const query = `
 [out:json][timeout:90];
 (
@@ -75,10 +75,13 @@ out body qt;
   const url = "https://overpass-api.de/api/interpreter";
 
   const res = await axios.post(url, query, {
-    headers: { "Content-Type": "text/plain", "User-Agent": "rally-stage-generator/1.0" },
+    headers: {
+      "Content-Type": "text/plain",
+      "User-Agent": "rally-stage-generator/1.0",
+    },
     timeout: 180000,
     maxBodyLength: Infinity,
-    maxContentLength: Infinity
+    maxContentLength: Infinity,
   });
 
   console.log("-------- OVERPASS RESPONSE --------");
@@ -119,9 +122,6 @@ function osmJsonToGeoJsonAndStats(osmJson) {
 /**
  * Filtrer les routes pour ne garder que celles plausibles pour un rallye
  */
-/**
- * Filtrage avancé des routes réalistes pour une spéciale de rallye
- */
 function filterRallyeWays(geojson) {
   const allowedHighways = [
     "track",
@@ -129,7 +129,7 @@ function filterRallyeWays(geojson) {
     "road",
     "secondary",
     "tertiary",
-    "residential" // ok si campagne
+    "residential",
   ];
 
   const forbiddenHighways = [
@@ -140,7 +140,7 @@ function filterRallyeWays(geojson) {
     "footway",
     "cycleway",
     "path",
-    "pedestrian"
+    "pedestrian",
   ];
 
   const allowedSurfaces = [
@@ -151,35 +151,27 @@ function filterRallyeWays(geojson) {
     "gravel",
     "dirt",
     "ground",
-    "unpaved"
+    "unpaved",
   ];
 
   const filtered = geojson.features.filter((f) => {
     if (!f.geometry || f.geometry.type !== "LineString") return false;
 
     const hw = f.properties.highway;
-    const surf = f.properties.surface ? f.properties.surface.toLowerCase() : null;
+    const surf = f.properties.surface
+      ? f.properties.surface.toLowerCase()
+      : null;
 
-    // 1) Exclusion autoroutes / routes principales
     if (!hw || forbiddenHighways.includes(hw)) return false;
-
-    // 2) Garder uniquement les petites routes pertinentes
     if (!allowedHighways.includes(hw)) return false;
-
-    // 3) Surface filtrée
     if (surf && !allowedSurfaces.includes(surf)) return false;
 
-    // 4) Exclure si trop court (< 80 m)
     const len = turf.length(f, { units: "kilometers" });
     if (len < 0.08) return false;
 
-    // 5) Exclure routes urbaines (si trop d'adresses autour)
     if (f.properties["addr:street"]) return false;
-
-    // 6) Exclure parkings
     if (f.properties.parking) return false;
 
-    // 7) Exclure zones commerciales / industrielles
     const landuse = f.properties.landuse;
     if (landuse && ["industrial", "commercial", "retail"].includes(landuse))
       return false;
@@ -191,10 +183,12 @@ function filterRallyeWays(geojson) {
 }
 
 /**
- * Generate a single stage from the filtered GeoJSON
+ * Generate a single stage from the filtered GeoJSON and detect intersections
  */
 function generateSingleSpeciale(geojson, minKm = 3, maxKm = 15) {
-  if (!geojson || !geojson.features || geojson.features.length === 0) return [];
+  if (!geojson || !geojson.features || geojson.features.length === 0) {
+    return { path: [], intersections: [] };
+  }
 
   const g = new graphlib.Graph({ directed: false });
 
@@ -206,13 +200,18 @@ function generateSingleSpeciale(geojson, minKm = 3, maxKm = 15) {
       const b = coords[i + 1].join(",");
       if (!g.hasNode(a)) g.setNode(a, coords[i]);
       if (!g.hasNode(b)) g.setNode(b, coords[i + 1]);
-      const len = turf.distance(turf.point(coords[i]), turf.point(coords[i + 1]), { units: "kilometers" });
+      const len = turf.distance(
+        turf.point(coords[i]),
+        turf.point(coords[i + 1]),
+        { units: "kilometers" }
+      );
       g.setEdge(a, b, { length: len });
     }
   });
 
   const visitedGlobal = new Set();
-  let bestPath = [], bestLength = 0;
+  let bestPath = [],
+    bestLength = 0;
 
   // We go through all the nodes as starting points
   g.nodes().forEach((start) => {
@@ -229,7 +228,9 @@ function generateSingleSpeciale(geojson, minKm = 3, maxKm = 15) {
       visited.add(current);
       visitedGlobal.add(current);
 
-      const neighbors = g.neighbors(current).filter((n) => n !== prev && !visited.has(n));
+      const neighbors = g
+        .neighbors(current)
+        .filter((n) => n !== prev && !visited.has(n));
       if (neighbors.length === 0) break;
 
       const next = neighbors[0];
@@ -240,14 +241,89 @@ function generateSingleSpeciale(geojson, minKm = 3, maxKm = 15) {
       current = next;
     }
 
-    // We only keep paths that exceed minKm and have multiple branches
     if (totalLen >= minKm && totalLen > bestLength && path.length > 2) {
       bestLength = totalLen;
       bestPath = path;
     }
   });
 
-  return bestPath;
+  // Helper: check if two segments intersect geometrically
+  function segmentsIntersect(p1, p2, p3, p4) {
+    const [x1, y1] = p1;
+    const [x2, y2] = p2;
+    const [x3, y3] = p3;
+    const [x4, y4] = p4;
+
+    const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+    if (Math.abs(denom) < 1e-10) return false;
+
+    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+
+    return ua > 0.05 && ua < 0.95 && ub > 0.05 && ub < 0.95;
+  }
+
+  // Helper: check if point is close to segment
+  function isNearSegment(point, seg, tolerance = 0.0001) {
+    const [px, py] = point;
+    const [x1, y1] = seg[0];
+    const [x2, y2] = seg[1];
+
+    const minX = Math.min(x1, x2) - tolerance;
+    const maxX = Math.max(x1, x2) + tolerance;
+    const minY = Math.min(y1, y2) - tolerance;
+    const maxY = Math.max(y1, y2) + tolerance;
+
+    return px >= minX && px <= maxX && py >= minY && py <= maxY;
+  }
+
+  // Détecter les intersections (nœuds avec plus de 2 voisins ou nœuds avec 2 voisins non alignés)
+  const intersectionIndices = new Set();
+
+  // Fonction pour vérifier si deux segments sont alignés
+  function areSegmentsAligned(a, b, c) {
+    // Vecteurs
+    const vec1 = [b[0] - a[0], b[1] - a[1]];
+    const vec2 = [c[0] - b[0], c[1] - b[1]];
+
+    // Produit vectoriel (cross product) pour vérifier l'alignement
+    const crossProduct = vec1[0] * vec2[1] - vec1[1] * vec2[0];
+    return Math.abs(crossProduct) < 0.000001; // Seuil pour considérer les segments comme alignés
+  }
+
+  // Méthode 1 : Détection par graphe
+  bestPath.forEach((coord, idx) => {
+    if (idx <= 0 || idx >= bestPath.length - 1) return;
+    const nodeKey = coord.join(",");
+    if (!g.hasNode(nodeKey)) return;
+    const degree = g.neighbors(nodeKey).length;
+
+    // Si le nœud a plus de 2 voisins, c'est une intersection
+    if (degree > 2) {
+      intersectionIndices.add(idx);
+      console.log(`Intersection graphe à l'indice ${idx}: ${degree} voisins`);
+    }
+    // Si le nœud a 2 voisins, vérifier si les segments ne sont pas alignés
+    else if (degree === 2) {
+      const prevCoord = bestPath[idx - 1];
+      const currentCoord = bestPath[idx];
+      const nextCoord = bestPath[idx + 1];
+
+      if (!areSegmentsAligned(prevCoord, currentCoord, nextCoord)) {
+        intersectionIndices.add(idx);
+        console.log(
+          `Intersection ajoutée à l'indice ${idx}: segments non alignés`
+        );
+      }
+    }
+  });
+
+  // Convertir en tableau trié
+  const finalIndices = Array.from(intersectionIndices).sort((a, b) => a - b);
+  console.log("Intersections totales détectées:", finalIndices.length);
+  console.log("Indices:", finalIndices);
+
+  return { path: bestPath, intersections: finalIndices };
 }
 
 /**
@@ -293,8 +369,12 @@ app.post("/api/generate", async (req, res) => {
     // 4) Filter for rally
     const rallyeGeojson = filterRallyeWays(geojson);
 
-    // 5) Generate one stage
-    const speciale = generateSingleSpeciale(rallyeGeojson, 3, 15);
+    // 5) Generate one stage with intersections
+    const { path: speciale, intersections } = generateSingleSpeciale(
+      rallyeGeojson,
+      3,
+      15
+    );
     const specialGeojson = specialToGeoJSON(speciale);
 
     console.log("FIN");
@@ -305,6 +385,7 @@ app.post("/api/generate", async (req, res) => {
       radiusMeters,
       stats,
       geojson: specialGeojson,
+      intersections, // Indices des intersections dans le path
       speciales: speciale ? [speciale] : [],
     });
   } catch (err) {
