@@ -1,24 +1,12 @@
-import * as turf from '@turf/turf';
-import axios from 'axios';
+/**
+ * Calcul des statistiques de spéciale
+ */
+import * as turf from "@turf/turf";
+import { fetchElevations, calculateElevationStats } from "../services/elevationService";
 
-async function fetchElevations(coordinates) {
-  try {
-    const locations = coordinates.map(coord => ({
-      latitude: coord[1],
-      longitude: coord[0]
-    }));
-
-    const response = await axios.post('https://api.open-elevation.com/api/v1/lookup', {
-      locations: locations
-    });
-
-    return response.data.results;
-  } catch (error) {
-    console.error("Erreur lors de la récupération des altitudes:", error);
-    return null;
-  }
-}
-
+/**
+ * Calcule la pente moyenne entre les intersections
+ */
 function calculateAverageSlope(coordinates, elevations, intersections) {
   if (!elevations || elevations.length < 2 || !intersections || intersections.length < 2) {
     return 0;
@@ -27,22 +15,23 @@ function calculateAverageSlope(coordinates, elevations, intersections) {
   let totalSlope = 0;
   let segmentCount = 0;
 
-  // Calculer la pente moyenne entre chaque PK
   for (let i = 0; i < intersections.length - 1; i++) {
     const startIdx = intersections[i];
     const endIdx = intersections[i + 1];
 
-    const startElevation = elevations[startIdx].elevation;
-    const endElevation = elevations[endIdx].elevation;
+    const startElevation = elevations[startIdx]?.elevation;
+    const endElevation = elevations[endIdx]?.elevation;
+
+    if (startElevation === undefined || endElevation === undefined) continue;
 
     const startCoord = coordinates[startIdx];
     const endCoord = coordinates[endIdx];
-    const distance = turf.distance(turf.point(startCoord), turf.point(endCoord), { units: 'kilometers' });
+    const distance = turf.distance(turf.point(startCoord), turf.point(endCoord), {
+      units: "kilometers",
+    });
 
-    // Éviter les divisions par zéro
     if (distance === 0) continue;
 
-    // Pente en pourcentage
     const elevationDiff = Math.abs(endElevation - startElevation);
     const slope = (elevationDiff / (distance * 1000)) * 100;
     totalSlope += slope;
@@ -52,71 +41,66 @@ function calculateAverageSlope(coordinates, elevations, intersections) {
   return segmentCount > 0 ? (totalSlope / segmentCount).toFixed(2) : 0;
 }
 
-export async function calculateSpecialeStats(geojson, intersections) {
-  if (!geojson || !geojson.features || geojson.features.length === 0) {
-    return {
-      length: 0,
-      intersections: 0,
-      avgDistanceBetweenPK: 0,
-      elevation: { min: 0, max: 0, gain: 0, loss: 0 },
-      avgSlope: 0,
-    };
+/**
+ * Calcule la distance moyenne entre les PK
+ */
+function calculateAvgDistanceBetweenPK(coordinates, intersections) {
+  if (!intersections || intersections.length < 2) return 0;
+
+  let totalDistance = 0;
+
+  for (let i = 0; i < intersections.length - 1; i++) {
+    const startCoord = coordinates[intersections[i]];
+    const endCoord = coordinates[intersections[i + 1]];
+    totalDistance += turf.distance(turf.point(startCoord), turf.point(endCoord), {
+      units: "kilometers",
+    });
   }
+
+  return (totalDistance / (intersections.length - 1)).toFixed(2);
+}
+
+/**
+ * Calcule toutes les statistiques de la spéciale
+ * @param {Object} geojson - GeoJSON de la spéciale
+ * @param {Array} intersections - Indices des intersections
+ * @returns {Promise<Object>}
+ */
+export async function calculateSpecialeStats(geojson, intersections) {
+  const emptyStats = {
+    length: 0,
+    intersections: 0,
+    avgDistanceBetweenPK: 0,
+    elevation: { min: 0, max: 0, gain: 0, loss: 0 },
+    avgSlope: 0,
+  };
+
+  if (!geojson?.features?.length) return emptyStats;
 
   const line = geojson.features[0];
-  const length = turf.length(line, { units: 'kilometers' });
-  const numIntersections = intersections ? intersections.length : 0;
-
-  // Calculer la distance moyenne entre les PK
-  let avgDistanceBetweenPK = 0;
-  if (intersections && intersections.length > 1) {
-    let totalDistance = 0;
-    for (let i = 0; i < intersections.length - 1; i++) {
-      const startIdx = intersections[i];
-      const endIdx = intersections[i + 1];
-      const startCoord = line.geometry.coordinates[startIdx];
-      const endCoord = line.geometry.coordinates[endIdx];
-      const segmentLength = turf.distance(turf.point(startCoord), turf.point(endCoord), { units: 'kilometers' });
-      totalDistance += segmentLength;
-    }
-    avgDistanceBetweenPK = totalDistance / (intersections.length - 1);
-  }
-
-  // Récupérer les altitudes réelles
   const coordinates = line.geometry.coordinates;
+
+  // Longueur totale
+  const length = turf.length(line, { units: "kilometers" }).toFixed(2);
+
+  // Nombre d'intersections
+  const numIntersections = intersections?.length || 0;
+
+  // Distance moyenne entre PK
+  const avgDistanceBetweenPK = calculateAvgDistanceBetweenPK(coordinates, intersections);
+
+  // Altitudes
   const elevations = await fetchElevations(coordinates);
+  const elevation = calculateElevationStats(elevations);
 
-  let elevation = { min: 0, max: 0, gain: 0, loss: 0 };
-  let avgSlope = 0;
-
-  if (elevations) {
-    const elevationValues = elevations.map(e => e.elevation);
-    elevation.min = Math.min(...elevationValues);
-    elevation.max = Math.max(...elevationValues);
-
-    // Calculer le dénivelé positif et négatif
-    let totalGain = 0;
-    let totalLoss = 0;
-    for (let i = 1; i < elevationValues.length; i++) {
-      const diff = elevationValues[i] - elevationValues[i - 1];
-      if (diff > 0) {
-        totalGain += diff;
-      } else {
-        totalLoss += Math.abs(diff);
-      }
-    }
-    elevation.gain = totalGain.toFixed(0);
-    elevation.loss = totalLoss.toFixed(0);
-
-    // Calculer la pente moyenne
-    avgSlope = calculateAverageSlope(coordinates, elevations, intersections);
-  }
+  // Pente moyenne
+  const avgSlope = calculateAverageSlope(coordinates, elevations, intersections);
 
   return {
-    length: length.toFixed(2),
+    length,
     intersections: numIntersections,
-    avgDistanceBetweenPK: avgDistanceBetweenPK.toFixed(2),
-    elevation: elevation,
-    avgSlope: avgSlope,
+    avgDistanceBetweenPK,
+    elevation,
+    avgSlope,
   };
 }
