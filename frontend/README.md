@@ -36,7 +36,15 @@ frontend/
 │   ├── utils/
 │   │   ├── specialeStats.js       # Calcul des statistiques
 │   │   └── geometry.js            # Fonctions géométriques
+│   ├── tests/                     # Tests unitaires
+│   │   ├── components/
+│   │   │   └── SpecialeStats.test.js
+│   │   ├── services/
+│   │   │   └── exportService.test.js
+│   │   └── utils/
+│   │       └── geometry.test.js
 │   ├── App.js
+│   ├── App.test.js
 │   └── index.js
 ├── package.json
 └── README.md
@@ -61,6 +69,29 @@ npm start
 ```
 
 L'application démarre sur http://localhost:3000
+
+## 🧪 Tests
+
+Le frontend utilise **Jest** et **React Testing Library** pour les tests.
+```bash
+# Lancer les tests (mode watch)
+npm test
+
+# Lancer les tests avec couverture
+npm test -- --coverage
+
+# Lancer les tests une seule fois
+npm test -- --watchAll=false
+```
+
+### Couverture actuelle
+
+| Fichier | Statements | Lignes |
+|---------|------------|--------|
+| `App.js` | 100% | 100% |
+| `geometry.js` | 100% | 100% |
+| `exportService.js` | 90% | 100% |
+| **Total** | **92.68%** | **100%** |
 
 ## 🧩 Composants
 
@@ -99,10 +130,15 @@ Exporte le tracé en :
 
 ## 📦 Dépendances
 
+### Production
 - `react` - Framework UI
 - `react-leaflet` / `leaflet` - Carte interactive
 - `@turf/turf` - Calculs géospatiaux
 - `axios` - Client HTTP
+
+### Développement
+- `@testing-library/react` - Tests de composants React
+- `@testing-library/jest-dom` - Matchers Jest pour le DOM
 
 ## 🎨 Personnalisation
 

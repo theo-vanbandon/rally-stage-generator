@@ -24,6 +24,16 @@ backend/
 │   └── specialeGenerator.js    # Génération de spéciale
 ├── utils/
 │   └── geometry.js             # Fonctions géométriques
+├── __tests__/                  # Tests unitaires
+│   ├── routes/
+│   │   └── generate.test.js
+│   ├── services/
+│   │   ├── geocoder.test.js
+│   │   ├── geojsonConverter.test.js
+│   │   ├── rallyFilter.test.js
+│   │   └── specialeGenerator.test.js
+│   └── utils/
+│       └── geometry.test.js
 ├── package.json
 └── README.md
 ```
@@ -50,6 +60,31 @@ npm run dev
 ```
 
 Le serveur démarre sur http://localhost:4000
+
+## 🧪 Tests
+
+Le backend utilise **Jest** et **Supertest** pour les tests.
+```bash
+# Lancer les tests
+npm test
+
+# Lancer les tests en mode watch
+npm run test:watch
+
+# Lancer les tests avec couverture
+npm run test:coverage
+```
+
+### Couverture actuelle
+
+| Fichier | Statements | Lignes |
+|---------|------------|--------|
+| `geometry.js` | 100% | 100% |
+| `geocoder.js` | 93.75% | 93.75% |
+| `specialeGenerator.js` | 91.02% | 94.2% |
+| `rallyFilter.js` | 80.64% | 100% |
+| `generate.js` | 71.42% | 71.42% |
+| **Total** | **79.02%** | **81.81%** |
 
 ## 📡 API Endpoints
 
@@ -110,12 +145,18 @@ Génère le tracé de la spéciale en utilisant un algorithme de graphe et déte
 
 ## 📦 Dépendances
 
+### Production
 - `express` - Framework web
 - `axios` - Client HTTP
 - `cors` - Middleware CORS
 - `osmtogeojson` - Conversion OSM → GeoJSON
 - `@turf/turf` - Calculs géospatiaux
 - `graphlib` - Algorithmes de graphe
+
+### Développement
+- `jest` - Framework de tests
+- `supertest` - Tests d'API HTTP
+- `nodemon` - Rechargement automatique
 
 ## 🐛 Débogage
 
