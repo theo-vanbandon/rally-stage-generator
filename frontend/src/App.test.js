@@ -1,8 +1,17 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+// Mock des composants qui utilisent Leaflet
+jest.mock('./components/RouteGenerator', () => {
+  return function MockRouteGenerator() {
+    return <div data-testid="route-generator">RouteGenerator Mock</div>;
+  };
+});
+
+describe('App Component', () => {
+  test('devrait rendre sans erreur', () => {
+    render(<App />);
+    expect(screen.getByTestId('route-generator')).toBeInTheDocument();
+  });
 });
