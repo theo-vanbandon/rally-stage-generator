@@ -10,7 +10,7 @@ const turf = require("@turf/turf");
  * @returns {{geojson: Object, stats: {waysCount: number, totalKm: number}}}
  */
 function osmJsonToGeoJson(osmJson) {
-  if (!osmJson || !osmJson.elements || osmJson.elements.length === 0) {
+  if (!osmJson?.elements?.length) {
     return {
       geojson: { type: "FeatureCollection", features: [] },
       stats: { waysCount: 0, totalKm: 0 },
@@ -23,16 +23,15 @@ function osmJsonToGeoJson(osmJson) {
   let waysCount = 0;
 
   if (geojson.features) {
-    geojson.features.forEach((f) => {
-      if (f.geometry && f.geometry.type === "LineString") {
+    for (const f of geojson.features) {
+      if (f.geometry?.type === "LineString") {
         waysCount++;
-        try {
-          totalKm += turf.length(f, { units: "kilometers" });
-        } catch (e) {
-          // Ignorer les erreurs de calcul de longueur
+        const length = turf.length(f, { units: "kilometers" });
+        if (!Number.isNaN(length)) {
+          totalKm += length;
         }
       }
-    });
+    }
   }
 
   return { geojson, stats: { waysCount, totalKm } };

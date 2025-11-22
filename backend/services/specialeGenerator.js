@@ -11,7 +11,7 @@ const { areSegmentsAligned } = require("../utils/geometry");
 function buildGraph(geojson) {
   const g = new graphlib.Graph({ directed: false });
 
-  geojson.features.forEach((f) => {
+  for (const f of geojson.features) {
     const coords = f.geometry.coordinates;
     for (let i = 0; i < coords.length - 1; i++) {
       const a = coords[i].join(",");
@@ -27,7 +27,7 @@ function buildGraph(geojson) {
       );
       g.setEdge(a, b, { length });
     }
-  });
+  }
 
   return g;
 }
@@ -40,8 +40,8 @@ function findBestPath(g, minKm, maxKm) {
   let bestPath = [];
   let bestLength = 0;
 
-  g.nodes().forEach((start) => {
-    if (visitedGlobal.has(start)) return;
+  for (const start of g.nodes()) {
+    if (visitedGlobal.has(start)) continue;
 
     const path = [];
     const visited = new Set();
@@ -73,7 +73,7 @@ function findBestPath(g, minKm, maxKm) {
       bestLength = totalLen;
       bestPath = path;
     }
-  });
+  }
 
   return bestPath;
 }
@@ -84,11 +84,11 @@ function findBestPath(g, minKm, maxKm) {
 function detectIntersections(path, g) {
   const intersectionIndices = new Set();
 
-  path.forEach((coord, idx) => {
-    if (idx <= 0 || idx >= path.length - 1) return;
+  for (const [idx, coord] of path.entries()) {
+    if (idx <= 0 || idx >= path.length - 1) continue;
 
     const nodeKey = coord.join(",");
-    if (!g.hasNode(nodeKey)) return;
+    if (!g.hasNode(nodeKey)) continue;
 
     const degree = g.neighbors(nodeKey).length;
 
@@ -108,7 +108,7 @@ function detectIntersections(path, g) {
         console.log(`Intersection virage [${idx}]: segments non alignés`);
       }
     }
-  });
+  }
 
   return Array.from(intersectionIndices).sort((a, b) => a - b);
 }
@@ -117,7 +117,7 @@ function detectIntersections(path, g) {
  * Génère une spéciale avec détection des intersections
  */
 function generateSpeciale(geojson, minKm = 3, maxKm = 15) {
-  if (!geojson || !geojson.features || geojson.features.length === 0) {
+  if (!geojson?.features?.length) {
     return { path: [], intersections: [] };
   }
 

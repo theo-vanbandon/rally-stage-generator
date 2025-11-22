@@ -3,16 +3,16 @@
  */
 const turf = require("@turf/turf");
 
-const ALLOWED_HIGHWAYS = [
+const ALLOWED_HIGHWAYS = new Set([
   "track",
   "unclassified",
   "road",
   "secondary",
   "tertiary",
   "residential",
-];
+]);
 
-const FORBIDDEN_HIGHWAYS = [
+const FORBIDDEN_HIGHWAYS = new Set([
   "primary",
   "motorway",
   "trunk",
@@ -21,9 +21,9 @@ const FORBIDDEN_HIGHWAYS = [
   "cycleway",
   "path",
   "pedestrian",
-];
+]);
 
-const ALLOWED_SURFACES = [
+const ALLOWED_SURFACES = new Set([
   "asphalt",
   "paved",
   "compacted",
@@ -32,9 +32,9 @@ const ALLOWED_SURFACES = [
   "dirt",
   "ground",
   "unpaved",
-];
+]);
 
-const FORBIDDEN_LANDUSE = ["industrial", "commercial", "retail"];
+const FORBIDDEN_LANDUSE = new Set(["industrial", "commercial", "retail"]);
 
 const MIN_LENGTH_KM = 0.08;
 
@@ -45,15 +45,15 @@ const MIN_LENGTH_KM = 0.08;
  */
 function filterRallyeWays(geojson) {
   const filtered = geojson.features.filter((f) => {
-    if (!f.geometry || f.geometry.type !== "LineString") return false;
+    if (f.geometry?.type !== "LineString") return false;
 
     const props = f.properties;
     const highway = props.highway;
     const surface = props.surface ? props.surface.toLowerCase() : null;
 
-    if (!highway || FORBIDDEN_HIGHWAYS.includes(highway)) return false;
-    if (!ALLOWED_HIGHWAYS.includes(highway)) return false;
-    if (surface && !ALLOWED_SURFACES.includes(surface)) return false;
+    if (!highway || FORBIDDEN_HIGHWAYS.has(highway)) return false;
+    if (!ALLOWED_HIGHWAYS.has(highway)) return false;
+    if (surface && !ALLOWED_SURFACES.has(surface)) return false;
 
     const length = turf.length(f, { units: "kilometers" });
     if (length < MIN_LENGTH_KM) return false;
@@ -62,7 +62,7 @@ function filterRallyeWays(geojson) {
     if (props.parking) return false;
 
     const landuse = props.landuse;
-    if (landuse && FORBIDDEN_LANDUSE.includes(landuse)) return false;
+    if (landuse && FORBIDDEN_LANDUSE.has(landuse)) return false;
 
     return true;
   });

@@ -40,7 +40,7 @@ describe('Speciale Generator Service', () => {
                 [2.37, 48.87],
                 [2.38, 48.88],
                 [2.39, 48.89],
-                [2.40, 48.90]
+                [2.4, 48.9]
               ]
             }
           },
@@ -49,7 +49,7 @@ describe('Speciale Generator Service', () => {
             geometry: {
               type: 'LineString',
               coordinates: [
-                [2.40, 48.90],
+                [2.4, 48.9],
                 [2.41, 48.91],
                 [2.42, 48.92],
                 [2.43, 48.93],

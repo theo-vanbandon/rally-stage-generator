@@ -25,7 +25,7 @@ async function geocode(place, postal) {
     headers: { "User-Agent": USER_AGENT },
   });
 
-  if (!res.data || res.data.length === 0) {
+  if (!res.data?.length) {
     throw new Error("Lieu non trouvé");
   }
 
@@ -33,7 +33,7 @@ async function geocode(place, postal) {
 
   if (postal) {
     candidates = candidates.filter(
-      (item) => item.address && item.address.postcode == postal
+      (item) => item.address?.postcode === postal
     );
   }
 
@@ -44,7 +44,7 @@ async function geocode(place, postal) {
   }
 
   const { lat, lon } = candidates[0];
-  return { lat: parseFloat(lat), lon: parseFloat(lon) };
+  return { lat: Number.parseFloat(lat), lon: Number.parseFloat(lon) };
 }
 
 module.exports = { geocode };
