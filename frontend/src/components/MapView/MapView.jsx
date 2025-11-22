@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import PropTypes from "prop-types";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, ScaleControl } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -93,12 +94,12 @@ export default function MapView({ geojson, intersections }) {
     >
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-      {/* ⭐ Ajout de l'échelle en bas à gauche */}
       <ScaleControl position="bottomleft" />
 
-      {lines?.map((coords, i) => (
-        <Polyline key={i} positions={coords} color="#E53935" weight={4} />
-      ))}
+      {lines?.map((coords) => {
+        const key = `line-${coords[0][0]}-${coords[0][1]}`;
+        return <Polyline key={key} positions={coords} color="#E53935" weight={4} />;
+      })}
 
       {start && (
         <Marker position={start} icon={startIcon}>
@@ -112,9 +113,9 @@ export default function MapView({ geojson, intersections }) {
         </Marker>
       )}
 
-      {pks.map((pk, i) => (
+      {pks.map((pk) => (
         <Marker
-          key={`pk-${i}`}
+          key={pk.label}
           position={pk.position}
           icon={createPKIcon(pk.label)}
           zIndexOffset={1000}
@@ -129,3 +130,22 @@ export default function MapView({ geojson, intersections }) {
     </MapContainer>
   );
 }
+
+MapView.propTypes = {
+  geojson: PropTypes.shape({
+    features: PropTypes.arrayOf(
+      PropTypes.shape({
+        geometry: PropTypes.shape({
+          type: PropTypes.string,
+          coordinates: PropTypes.arrayOf(PropTypes.array),
+        }),
+      })
+    ),
+  }),
+  intersections: PropTypes.arrayOf(PropTypes.number),
+};
+
+MapView.defaultProps = {
+  geojson: null,
+  intersections: null,
+};

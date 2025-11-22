@@ -24,11 +24,11 @@ function extractCoordinates(geojson) {
   if (!geojson?.features) return [];
 
   const coords = [];
-  geojson.features.forEach((f) => {
-    if (f.geometry?.type === "LineString") {
-      coords.push(...f.geometry.coordinates);
+  for (const feature of geojson.features) {
+    if (feature.geometry?.type === "LineString") {
+      coords.push(...feature.geometry.coordinates);
     }
-  });
+  }
   return coords;
 }
 

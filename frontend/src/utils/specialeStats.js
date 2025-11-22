@@ -6,10 +6,11 @@ import { fetchElevations, calculateElevationStats } from "../services/elevationS
 
 /**
  * Calcule la pente moyenne entre les intersections
+ * @returns {string} Pente moyenne en pourcentage (formatée avec 2 décimales)
  */
 function calculateAverageSlope(coordinates, elevations, intersections) {
   if (!elevations || elevations.length < 2 || !intersections || intersections.length < 2) {
-    return 0;
+    return "0.00";
   }
 
   let totalSlope = 0;
@@ -38,14 +39,17 @@ function calculateAverageSlope(coordinates, elevations, intersections) {
     segmentCount++;
   }
 
-  return segmentCount > 0 ? (totalSlope / segmentCount).toFixed(2) : 0;
+  return segmentCount > 0 ? (totalSlope / segmentCount).toFixed(2) : "0.00";
 }
 
 /**
  * Calcule la distance moyenne entre les PK
+ * @returns {string} Distance moyenne en km (formatée avec 2 décimales)
  */
 function calculateAvgDistanceBetweenPK(coordinates, intersections) {
-  if (!intersections || intersections.length < 2) return 0;
+  if (!intersections || intersections.length < 2) {
+    return "0.00";
+  }
 
   let totalDistance = 0;
 
@@ -68,11 +72,11 @@ function calculateAvgDistanceBetweenPK(coordinates, intersections) {
  */
 export async function calculateSpecialeStats(geojson, intersections) {
   const emptyStats = {
-    length: 0,
+    length: "0.00",
     intersections: 0,
-    avgDistanceBetweenPK: 0,
+    avgDistanceBetweenPK: "0.00",
     elevation: { min: 0, max: 0, gain: 0, loss: 0 },
-    avgSlope: 0,
+    avgSlope: "0.00",
   };
 
   if (!geojson?.features?.length) return emptyStats;

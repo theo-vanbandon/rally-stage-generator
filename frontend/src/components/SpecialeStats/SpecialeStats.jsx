@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import "./SpecialeStats.css";
 
 export default function SpecialeStats({ stats }) {
@@ -36,3 +37,22 @@ export default function SpecialeStats({ stats }) {
     </div>
   );
 }
+
+SpecialeStats.propTypes = {
+  stats: PropTypes.shape({
+    length: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    intersections: PropTypes.number,
+    avgDistanceBetweenPK: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    elevation: PropTypes.shape({
+      min: PropTypes.number,
+      max: PropTypes.number,
+      gain: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      loss: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    }),
+    avgSlope: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  }),
+};
+
+SpecialeStats.defaultProps = {
+  stats: null,
+};

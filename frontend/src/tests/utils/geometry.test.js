@@ -6,7 +6,7 @@ describe('Geometry Utils', () => {
     test('devrait calculer la distance entre deux points', () => {
       // Paris à Lyon ~ 392 km
       const paris = [2.3522, 48.8566];
-      const lyon = [4.8357, 45.7640];
+      const lyon = [4.8357, 45.764];
       
       const distance = haversineDistance(paris, lyon);
       

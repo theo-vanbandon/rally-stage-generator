@@ -65,41 +65,38 @@ export default function RouteGenerator() {
       <h1>Générateur de spéciale de rallye</h1>
 
       <form onSubmit={(e) => { e.preventDefault(); handleGenerate(); }}>
-        <label>
-          Ville :
-          <input
-            type="text"
-            value={place}
-            onChange={(e) => setPlace(e.target.value)}
-            placeholder="Ex : Gap"
-            required
-          />
-        </label>
+        <label htmlFor="place">Ville :</label>
+        <input
+          id="place"
+          type="text"
+          value={place}
+          onChange={(e) => setPlace(e.target.value)}
+          placeholder="Ex : Gap"
+          required
+        />
 
-        <label>
-          Code postal :
-          <input
-            type="text"
-            value={postal}
-            onChange={(e) => setPostal(e.target.value)}
-            placeholder="Ex : 05000"
-            pattern="\d{5}"
-            required
-          />
-        </label>
+        <label htmlFor="postal">Code postal :</label>
+        <input
+          id="postal"
+          type="text"
+          value={postal}
+          onChange={(e) => setPostal(e.target.value)}
+          placeholder="Ex : 05000"
+          pattern="\d{5}"
+          required
+        />
 
-        <label>
-          Rayon (km) :
-          <input
-            type="number"
-            value={radiusKm}
-            onChange={(e) => setRadiusKm(Number(e.target.value))}
-            min={1}
-            max={50}
-            required
-          />
-          <small>Min : 1 km — Max : 50 km</small>
-        </label>
+        <label htmlFor="radiusKm">Rayon (km) :</label>
+        <input
+          id="radiusKm"
+          type="number"
+          value={radiusKm}
+          onChange={(e) => setRadiusKm(Number(e.target.value))}
+          min={1}
+          max={50}
+          required
+        />
+        <small>Min : 1 km — Max : 50 km</small>
 
         <button type="submit" disabled={loading}>
           {loading ? "Chargement..." : "Générer la spéciale"}
