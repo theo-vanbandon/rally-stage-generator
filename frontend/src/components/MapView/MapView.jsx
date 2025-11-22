@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { MapContainer, TileLayer, Polyline, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, ScaleControl } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIconPng from "leaflet/dist/images/marker-icon.png";
@@ -29,9 +29,7 @@ const endIcon = new L.Icon({
   className: "end-marker",
 });
 
-/**
- * Crée une icône pour les points kilométriques
- */
+// Icône PK
 const createPKIcon = (label) => {
   return new L.DivIcon({
     html: `<div class="pk-marker-container">
@@ -44,9 +42,6 @@ const createPKIcon = (label) => {
   });
 };
 
-/**
- * Calcule les PK aux indices d'intersection
- */
 function calculatePKs(specialeCoords, intersectionIndices) {
   if (!intersectionIndices || intersectionIndices.length === 0) {
     return [];
@@ -66,7 +61,7 @@ function calculatePKs(specialeCoords, intersectionIndices) {
     if (indices.includes(i)) {
       const pkNumber = Math.round(cumulativeDistance * 10);
       pks.push({
-        position: [specialeCoords[i][1], specialeCoords[i][0]], // [lat, lon]
+        position: [specialeCoords[i][1], specialeCoords[i][0]],
         distance: cumulativeDistance,
         label: `PK${pkNumber}`,
       });
@@ -77,16 +72,13 @@ function calculatePKs(specialeCoords, intersectionIndices) {
 }
 
 export default function MapView({ geojson, intersections }) {
-  // Extraction des lignes pour l'affichage
   const lines = geojson?.features
     ?.filter((f) => f.geometry.type === "LineString")
-    .map((f) => f.geometry.coordinates.map((c) => [c[1], c[0]])); // [lat, lon]
+    .map((f) => f.geometry.coordinates.map((c) => [c[1], c[0]]));
 
-  // Points de départ et d'arrivée
   const start = lines?.length ? lines[0][0] : null;
   const end = lines?.length ? lines[0][lines[0].length - 1] : null;
 
-  // Calcul des PK
   const pks = useMemo(() => {
     const coords = geojson?.features?.[0]?.geometry?.coordinates;
     if (!coords || !intersections) return [];
@@ -97,30 +89,29 @@ export default function MapView({ geojson, intersections }) {
     <MapContainer
       center={start || [46.5, 6.1]}
       zoom={13}
-      style={{ height: "80vh", width: "100%" }}
+      className="map-container"
     >
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-      {/* Tracé de la spéciale */}
+      {/* ⭐ Ajout de l'échelle en bas à gauche */}
+      <ScaleControl position="bottomleft" />
+
       {lines?.map((coords, i) => (
         <Polyline key={i} positions={coords} color="#E53935" weight={4} />
       ))}
 
-      {/* Marqueur de départ */}
       {start && (
         <Marker position={start} icon={startIcon}>
           <Popup>Départ</Popup>
         </Marker>
       )}
 
-      {/* Marqueur d'arrivée */}
       {end && (
         <Marker position={end} icon={endIcon}>
           <Popup>Arrivée</Popup>
         </Marker>
       )}
 
-      {/* Points kilométriques */}
       {pks.map((pk, i) => (
         <Marker
           key={`pk-${i}`}

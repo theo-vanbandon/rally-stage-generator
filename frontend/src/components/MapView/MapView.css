@@ -28,3 +28,10 @@
 .leaflet-marker-pane .pk-icon {
   z-index: 1000 !important;
 }
+
+.map-container {
+  height: 80vh;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
