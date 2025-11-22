@@ -62,7 +62,7 @@ export default function RouteGenerator() {
 
   return (
     <div className="route-generator">
-      <h1>Rally Stage Generator</h1>
+      <h1>Générateur de spéciale de rallye</h1>
 
       <form onSubmit={(e) => { e.preventDefault(); handleGenerate(); }}>
         <label>
