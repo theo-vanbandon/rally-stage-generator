@@ -11,7 +11,16 @@ const PORT = process.env.PORT || 4000;
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+
+// CORS - Autoriser le frontend en production et en dev
+const corsOptions = {
+  origin: [
+    'http://localhost:3000', // Dev local
+    'https://rally-stage-generator-front.onrender.com' // Production
+  ],
+  credentials: true
+};
+app.use(cors(corsOptions));
 
 // Routes
 app.use("/api/generate", generateRoutes);
@@ -24,6 +33,6 @@ app.get("/api/ping", (req, res) => {
 // Démarrage
 app.listen(PORT, () => {
   console.log(`🚗 Rally Stage Generator Backend`);
-  console.log(`📍 http://localhost:${PORT}`);
+  console.log(`📍 Port: ${PORT}`);
   console.log(`----------------------------------`);
 });
