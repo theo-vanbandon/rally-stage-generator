@@ -25,8 +25,8 @@ export default function RouteGenerator() {
       setErrorMsg("Veuillez entrer un code postal valide (5 chiffres).");
       return false;
     }
-    if (radiusKm < 1 || radiusKm > 50) {
-      setErrorMsg("Le rayon doit être compris entre 1 km et 50 km.");
+    if (radiusKm < 1 || radiusKm > 15) {
+      setErrorMsg("Le rayon doit être compris entre 1 km et 15 km.");
       return false;
     }
     return true;
@@ -93,10 +93,10 @@ export default function RouteGenerator() {
           value={radiusKm}
           onChange={(e) => setRadiusKm(Number(e.target.value))}
           min={1}
-          max={50}
+          max={15}
           required
         />
-        <small>Min : 1 km — Max : 50 km</small>
+        <small>Min : 1 km — Max : 15 km</small>
 
         <button type="submit" disabled={loading}>
           {loading ? "Chargement..." : "Générer la spéciale"}

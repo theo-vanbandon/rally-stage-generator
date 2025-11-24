@@ -5,6 +5,7 @@ const axios = require("axios");
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const USER_AGENT = "rally-stage-generator/1.0";
+const MAX_RADIUS_METERS = 15000; // 15km maximum pour protéger les 512MB de RAM du back
 
 /**
  * Récupère les routes autour d'un point via Overpass API
@@ -14,12 +15,15 @@ const USER_AGENT = "rally-stage-generator/1.0";
  * @returns {Promise<Object>} Données OSM brutes
  */
 async function queryOverpass(lat, lon, radiusMeters) {
+  // Limiter le rayon pour éviter les timeouts et problèmes de mémoire
+  const limitedRadius = Math.min(radiusMeters, MAX_RADIUS_METERS);
+  
   const query = `
 [out:json][timeout:90];
 (
   way
-    (around:${radiusMeters},${lat},${lon})
-    ["highway"~"^(primary|secondary|tertiary|unclassified|track|road)$"]
+    (around:${limitedRadius},${lat},${lon})
+    ["highway"~"^(secondary|tertiary|unclassified|track|road)$"]
     ["surface"!~"^(paving_stones|cobblestone)$"];
 );
 out body;
@@ -28,7 +32,7 @@ out body qt;
 `;
 
   console.log("-------- QUERY OVERPASS --------");
-  console.log(`Centre: ${lat}, ${lon} | Rayon: ${radiusMeters}m`);
+  console.log(`Centre: ${lat}, ${lon} | Rayon: ${limitedRadius}m (demandé: ${radiusMeters}m)`);
 
   const res = await axios.post(OVERPASS_URL, query, {
     headers: {
