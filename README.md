@@ -68,7 +68,7 @@ Ouvrir http://localhost:3000 dans votre navigateur.
 
 1. Entrer le nom d'une ville française
 2. Entrer le code postal correspondant
-3. Définir le rayon de recherche (1-50 km)
+3. Définir le rayon de recherche (1-15 km)
 4. Cliquer sur "Générer la spéciale"
 5. Visualiser le tracé sur la carte avec les PK
 6. Consulter les statistiques
