@@ -1,0 +1,125 @@
+.roadbook {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.roadbook > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.roadbook-head,
+.roadbook-row {
+  display: grid;
+  grid-template-columns: 2rem 3.6rem 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+}
+
+.roadbook-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.roadbook-row {
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roadbook-row:hover,
+.roadbook-row:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.roadbook-n {
+  font-weight: 800;
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.roadbook-km {
+  display: flex;
+  flex-direction: column;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.roadbook-km small {
+  color: var(--text-muted);
+}
+
+.roadbook-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.roadbook-direction {
+  font-weight: 700;
+}
+
+.roadbook-danger {
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.roadbook-road {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roadbook-note {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.case-start .roadbook-direction,
+.case-finish .roadbook-direction,
+.case-stop .roadbook-direction {
+  text-transform: uppercase;
+}
+
+/* Symboles des cases sans tulipe */
+.case-sign {
+  display: block;
+}
+
+.case-surface {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border: 2px solid #333;
+  border-radius: 3px;
+  background: #fff;
+  color: #000;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.case-flag {
+  display: block;
+  background: repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0 / 10px 10px;
+  border: 1px solid #111;
+}

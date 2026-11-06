@@ -1,63 +1,49 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import SpecialeStats from '../../components/SpecialeStats';
+import SpecialeStats, { twistLabel } from '../../components/SpecialeStats/SpecialeStats';
+import { mockStage } from '../fixtures/stage';
 
 describe('SpecialeStats Component', () => {
-  
-  const mockStats = {
-    length: '12.50',
-    intersections: 8,
-    avgDistanceBetweenPK: '1.56',
-    elevation: {
-      min: 250,
-      max: 450,
-      gain: 320,
-      loss: 280
-    },
-    avgSlope: '4.5'
-  };
-
-  test('devrait afficher le titre', () => {
-    render(<SpecialeStats stats={mockStats} />);
-    
-    expect(screen.getByText(/Statistiques de la spéciale/)).toBeInTheDocument();
-  });
+  const { stats } = mockStage;
 
   test('devrait afficher la longueur', () => {
-    render(<SpecialeStats stats={mockStats} />);
-    
-    expect(screen.getByText(/Longueur/)).toBeInTheDocument();
+    render(<SpecialeStats stats={stats} />);
+    expect(screen.getByText('12.50 km')).toBeInTheDocument();
   });
 
-  test('devrait afficher le nombre d\'intersections', () => {
-    render(<SpecialeStats stats={mockStats} />);
-    
-    expect(screen.getByText(/Nombre d'intersections/)).toBeInTheDocument();
+  test('devrait qualifier la sinuosité', () => {
+    render(<SpecialeStats stats={stats} />);
+    expect(screen.getByText(/Très sinueuse/)).toBeInTheDocument();
+    expect(screen.getByText('690°/km')).toBeInTheDocument();
   });
 
-  test('devrait afficher les altitudes', () => {
-    render(<SpecialeStats stats={mockStats} />);
-    
-    expect(screen.getByText(/Altitude minimale/)).toBeInTheDocument();
-    expect(screen.getByText(/Altitude maximale/)).toBeInTheDocument();
+  test('devrait afficher le dénivelé et la pente', () => {
+    render(<SpecialeStats stats={stats} />);
+    expect(screen.getByText('+60 / −0 m')).toBeInTheDocument();
+    expect(screen.getByText('8.5 %')).toBeInTheDocument();
   });
 
-  test('devrait afficher le dénivelé', () => {
-    render(<SpecialeStats stats={mockStats} />);
-    
-    expect(screen.getByText(/Dénivelé positif/)).toBeInTheDocument();
-    expect(screen.getByText(/Dénivelé négatif/)).toBeInTheDocument();
+  test('devrait détailler le revêtement', () => {
+    render(<SpecialeStats stats={stats} />);
+    expect(screen.getByText('80 % asphalte · 20 % terre')).toBeInTheDocument();
   });
 
-  test('devrait afficher la pente moyenne', () => {
-    render(<SpecialeStats stats={mockStats} />);
-    
-    expect(screen.getByText(/Pente moyenne/)).toBeInTheDocument();
+  test('devrait masquer les altitudes si absentes', () => {
+    render(<SpecialeStats stats={{ ...stats, elevation: null }} />);
+    expect(screen.queryByText('Dénivelé')).not.toBeInTheDocument();
   });
 
   test('ne devrait rien afficher si stats est null', () => {
-    render(<SpecialeStats stats={null} />);
-    
-    expect(screen.queryByText(/Statistiques/)).not.toBeInTheDocument();
+    const { container } = render(<SpecialeStats stats={null} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  test.each([
+    [700, 'Très sinueuse'],
+    [500, 'Sinueuse'],
+    [300, 'Roulante'],
+    [150, 'Rapide'],
+  ])('twistLabel(%i) = %s', (value, label) => {
+    expect(twistLabel(value)).toBe(label);
   });
 });

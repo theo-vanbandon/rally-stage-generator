@@ -1,0 +1,146 @@
+/* Roadbook imprimable : caché à l'écran, seul élément imprimé */
+.roadbook-print {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A5 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+    background: #fff;
+    color: #000;
+  }
+
+  .app-layout {
+    display: none !important;
+  }
+
+  .roadbook-print {
+    display: block;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .rbp-header {
+    display: flex;
+    align-items: center;
+    gap: 4mm;
+    padding-bottom: 3mm;
+    margin-bottom: 3mm;
+    border-bottom: 1.5pt solid #000;
+  }
+
+  .rbp-es {
+    padding: 2mm 3mm;
+    background: #000;
+    color: #fff;
+    font-size: 16pt;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .rbp-header h1 {
+    margin: 0;
+    font-size: 14pt;
+  }
+
+  .rbp-header p {
+    margin: 1mm 0 0;
+    font-size: 9pt;
+  }
+
+  .rbp-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .rbp-table thead {
+    display: table-header-group; /* en-têtes répétés sur chaque page */
+  }
+
+  .rbp-table th {
+    padding: 1mm;
+    border: 1pt solid #000;
+    background: #e6e6e6;
+    font-size: 8pt;
+    text-transform: uppercase;
+  }
+
+  .rbp-table td {
+    padding: 1.5mm;
+    border: 1pt solid #000;
+    vertical-align: middle;
+  }
+
+  .rbp-table tr {
+    break-inside: avoid;
+  }
+
+  .rbp-n {
+    width: 9mm;
+    text-align: center;
+    font-size: 13pt;
+    font-weight: 800;
+  }
+
+  .rbp-km,
+  .rbp-partial {
+    width: 15mm;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rbp-km {
+    font-size: 12pt;
+    font-weight: 800;
+  }
+
+  .rbp-tulip {
+    width: 22mm;
+  }
+
+  .rbp-tulip .tulip,
+  .rbp-tulip .case-sign {
+    margin: 0 auto;
+  }
+
+  .rbp-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5mm;
+  }
+
+  .rbp-table td.rbp-info {
+    display: table-cell;
+  }
+
+  .rbp-info > * {
+    display: block;
+  }
+
+  .rbp-danger {
+    font-size: 14pt;
+    font-weight: 900;
+  }
+
+  .rbp-start .rbp-info strong,
+  .rbp-finish .rbp-info strong,
+  .rbp-stop .rbp-info strong {
+    text-transform: uppercase;
+  }
+
+  .rbp-footer {
+    margin-top: 3mm;
+    font-size: 7pt;
+    color: #444;
+  }
+}

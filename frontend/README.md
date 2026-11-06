@@ -1,159 +1,52 @@
 # 🎨 Rally Stage Generator - Frontend
 
-Interface utilisateur React pour le générateur de spéciales de rallye.
+Interface React du générateur de spéciales de rallye.
 
-## 📋 Description
+## 📋 Fonctionnalités
 
-Le frontend est une application React qui permet de :
-- Saisir les paramètres de génération (ville, code postal, rayon)
-- Visualiser le tracé sur une carte interactive
-- Afficher les Points Kilométriques (PK) aux intersections
-- Consulter les statistiques de la spéciale
-- Exporter le tracé en différents formats
+- Recherche de commune avec autocomplétion (nom ou code postal, via geo.api.gouv.fr)
+- Choix de la zone (5–20 km), du revêtement (asphalte / terre / mixte) et de la longueur
+- 3 tracés proposés par génération, cliquables sur la carte
+- Carte avec fonds **Plan IGN**, **photo aérienne IGN** et OpenStreetMap
+- Statistiques : longueur, sinuosité, lignes droites, dénivelé, pente max, revêtement
+- Profil d'altitude interactif (le survol positionne un repère sur la carte)
+- Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case
+- Impression du roadbook en A5 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
+- Export **GPX** (avec altitudes et waypoints PK), **KML** (3D) et **GeoJSON**
+- Lien partageable : l'URL contient la zone, les options et la graine, et régénère exactement la même spéciale
 
-## 🏗️ Structure du projet
+## 🏗️ Structure
 ```
-frontend/
-├── public/
-├── src/
-│   ├── components/
-│   │   ├── MapView/
-│   │   │   ├── MapView.jsx       # Carte Leaflet
-│   │   │   ├── MapView.css
-│   │   │   └── index.js
-│   │   ├── RouteGenerator/
-│   │   │   ├── RouteGenerator.jsx # Composant principal
-│   │   │   ├── RouteGenerator.css
-│   │   │   └── index.js
-│   │   └── SpecialeStats/
-│   │       ├── SpecialeStats.jsx  # Affichage des stats
-│   │       ├── SpecialeStats.css
-│   │       └── index.js
-│   ├── services/
-│   │   ├── api.js                 # Appels API backend
-│   │   ├── elevationService.js    # Service d'altitude
-│   │   └── exportService.js       # Export GeoJSON/KML/GPX
-│   ├── utils/
-│   │   ├── specialeStats.js       # Calcul des statistiques
-│   │   └── geometry.js            # Fonctions géométriques
-│   ├── tests/                     # Tests unitaires
-│   │   ├── components/
-│   │   │   └── SpecialeStats.test.js
-│   │   ├── services/
-│   │   │   └── exportService.test.js
-│   │   └── utils/
-│   │       └── geometry.test.js
-│   ├── App.js
-│   ├── App.test.js
-│   └── index.js
-├── package.json
-└── README.md
-```
-
-## 🚀 Installation
-```bash
-cd frontend
-npm install
+frontend/src/
+├── components/
+│   ├── RouteGenerator/   # Page principale : formulaire, résultats, état, URL partageable
+│   ├── CommuneSearch/    # Champ commune avec suggestions
+│   ├── MapView/          # Carte Leaflet (tracés, PK, départ/arrivée, zone de recherche)
+│   ├── SpecialeStats/    # Tuiles de statistiques
+│   ├── ElevationProfile/ # Profil altimétrique SVG
+│   ├── Roadbook/         # Roadbook à l'écran (cases + symboles)
+│   ├── RoadbookPrint/    # Roadbook imprimable A5
+│   └── Tulip/            # Dessin SVG d'une tulipe
+├── services/
+│   ├── api.js            # Backend + API des communes
+│   └── exportService.js  # Export GPX / KML / GeoJSON
+├── utils/
+│   └── geometry.js       # Distances, interpolation le long du tracé
+└── tests/                # Tests (Jest + React Testing Library)
 ```
 
 ## ⚙️ Configuration
 
-L'URL du backend est configurée dans `src/services/api.js` :
-```javascript
-const API_BASE_URL = "http://localhost:4000/api";
-```
+URL du backend : variable `REACT_APP_API_URL` (défaut `http://localhost:4000/api`). En production elle est définie dans `.env.production`.
 
 ## 🏃 Démarrage
 ```bash
-npm start
+npm install
+npm start        # http://localhost:3000
 ```
-
-L'application démarre sur http://localhost:3000
 
 ## 🧪 Tests
-
-Le frontend utilise **Jest** et **React Testing Library** pour les tests.
 ```bash
-# Lancer les tests (mode watch)
-npm test
-
-# Lancer les tests avec couverture
-npm test -- --coverage
-
-# Lancer les tests une seule fois
 npm test -- --watchAll=false
+npm test -- --coverage --watchAll=false
 ```
-
-### Couverture actuelle
-
-| Fichier | Statements | Lignes |
-|---------|------------|--------|
-| `App.js` | 100% | 100% |
-| `geometry.js` | 100% | 100% |
-| `exportService.js` | 90% | 100% |
-| **Total** | **92.68%** | **100%** |
-
-## 🧩 Composants
-
-### RouteGenerator
-Composant principal avec le formulaire de saisie et l'orchestration des autres composants.
-
-### MapView
-Carte interactive Leaflet affichant :
-- Le tracé de la spéciale (ligne rouge)
-- Le marqueur de départ (rouge)
-- Le marqueur d'arrivée (bleu)
-- Les Points Kilométriques (badges bleus)
-
-### SpecialeStats
-Affiche les statistiques de la spéciale :
-- Longueur totale
-- Nombre d'intersections
-- Distance moyenne entre PK
-- Altitude min/max
-- Dénivelé positif/négatif
-- Pente moyenne
-
-## 🔧 Services
-
-### api.js
-Gère les appels API vers le backend.
-
-### elevationService.js
-Récupère les données d'altitude via l'API Open-Elevation.
-
-### exportService.js
-Exporte le tracé en :
-- **GeoJSON** : Format standard géospatial
-- **KML** : Compatible Google Earth
-- **GPX** : Compatible GPS et applications de navigation
-
-## 📦 Dépendances
-
-### Production
-- `react` - Framework UI
-- `react-leaflet` / `leaflet` - Carte interactive
-- `@turf/turf` - Calculs géospatiaux
-- `axios` - Client HTTP
-
-### Développement
-- `@testing-library/react` - Tests de composants React
-- `@testing-library/jest-dom` - Matchers Jest pour le DOM
-
-## 🎨 Personnalisation
-
-### Couleurs des marqueurs
-Les icônes sont définies dans `MapView.jsx` :
-- Départ : marqueur rouge
-- Arrivée : marqueur bleu
-- PK : badge bleu avec texte blanc
-
-### Style de la carte
-Le style CSS est dans `MapView.css` et `RouteGenerator.css`.
-
-## 🐛 Débogage
-
-Ouvrir la console du navigateur (F12) pour voir :
-- Les données GeoJSON reçues
-- Les intersections détectées
-- Les PK calculés avec leur distance

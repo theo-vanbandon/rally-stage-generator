@@ -2,57 +2,86 @@ import React from "react";
 import PropTypes from "prop-types";
 import "./SpecialeStats.css";
 
+/** Qualificatif de la sinuosité (degrés de virage cumulés par km) */
+export function twistLabel(degPerKm) {
+  if (degPerKm >= 650) return "Très sinueuse";
+  if (degPerKm >= 450) return "Sinueuse";
+  if (degPerKm >= 280) return "Roulante";
+  return "Rapide";
+}
+
+function surfaceLabel({ paved, gravel, dirt }) {
+  const parts = [];
+  if (paved) parts.push(`${paved} % asphalte`);
+  if (gravel) parts.push(`${gravel} % terre`);
+  if (dirt) parts.push(`${dirt} % chemin`);
+  return parts.join(" · ") || "—";
+}
+
+function Stat({ label, value, hint = null }) {
+  return (
+    <div className="stat">
+      <dt>{label}</dt>
+      <dd>
+        {value}
+        {hint && <small>{hint}</small>}
+      </dd>
+    </div>
+  );
+}
+
+Stat.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.node.isRequired,
+  hint: PropTypes.node,
+};
+
 export default function SpecialeStats({ stats }) {
   if (!stats) return null;
+  const { elevation } = stats;
 
   return (
-    <div className="speciale-stats">
-      <h2>Statistiques de la spéciale</h2>
-      <ul>
-        <li>
-          <strong>Longueur :</strong> {stats.length} km
-        </li>
-        <li>
-          <strong>Nombre d'intersections :</strong> {stats.intersections}
-        </li>
-        <li>
-          <strong>Distance moyenne entre les PK :</strong> {stats.avgDistanceBetweenPK} km
-        </li>
-        <li>
-          <strong>Altitude minimale :</strong> {stats.elevation.min.toFixed(0)} m
-        </li>
-        <li>
-          <strong>Altitude maximale :</strong> {stats.elevation.max.toFixed(0)} m
-        </li>
-        <li>
-          <strong>Dénivelé positif :</strong> {stats.elevation.gain} m
-        </li>
-        <li>
-          <strong>Dénivelé négatif :</strong> {stats.elevation.loss} m
-        </li>
-        <li>
-          <strong>Pente moyenne :</strong> {stats.avgSlope} %
-        </li>
-      </ul>
-    </div>
+    <dl className="speciale-stats">
+      <Stat label="Longueur" value={`${stats.lengthKm.toFixed(2)} km`} />
+      <Stat label="Profil" value={twistLabel(stats.twistDegPerKm)} hint={`${stats.twistDegPerKm}°/km`} />
+      <Stat
+        label="Lignes droites"
+        value={`${stats.straightSharePct} %`}
+        hint={`max ${Math.round(stats.longestStraightKm * 1000)} m`}
+      />
+      <Stat label="Carrefours" value={stats.junctions} />
+      {elevation && (
+        <>
+          <Stat label="Dénivelé" value={`+${elevation.gain} / −${elevation.loss} m`} />
+          <Stat label="Altitude" value={`${elevation.min} → ${elevation.max} m`} />
+          <Stat label="Pente max" value={`${elevation.maxSlopePct} %`} hint="sur 200 m" />
+        </>
+      )}
+      <Stat label="Revêtement" value={surfaceLabel(stats.surfacePct)} />
+      {stats.urbanPct > 0 && <Stat label="Traversée de hameau" value={`${stats.urbanPct} %`} />}
+    </dl>
   );
 }
 
 SpecialeStats.propTypes = {
   stats: PropTypes.shape({
-    length: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    intersections: PropTypes.number,
-    avgDistanceBetweenPK: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    lengthKm: PropTypes.number.isRequired,
+    twistDegPerKm: PropTypes.number.isRequired,
+    straightSharePct: PropTypes.number.isRequired,
+    longestStraightKm: PropTypes.number.isRequired,
+    junctions: PropTypes.number.isRequired,
+    urbanPct: PropTypes.number,
+    surfacePct: PropTypes.shape({
+      paved: PropTypes.number,
+      gravel: PropTypes.number,
+      dirt: PropTypes.number,
+    }).isRequired,
     elevation: PropTypes.shape({
       min: PropTypes.number,
       max: PropTypes.number,
-      gain: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-      loss: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      gain: PropTypes.number,
+      loss: PropTypes.number,
+      maxSlopePct: PropTypes.number,
     }),
-    avgSlope: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   }),
-};
-
-SpecialeStats.defaultProps = {
-  stats: null,
 };

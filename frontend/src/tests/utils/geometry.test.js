@@ -1,4 +1,4 @@
-import { haversineDistance } from '../../utils/geometry';
+import { haversineDistance, cumulativeDistances, pointAtKm, bboxAround } from '../../utils/geometry';
 
 describe('Geometry Utils', () => {
   
@@ -31,6 +31,35 @@ describe('Geometry Utils', () => {
       
       expect(distance).toBeGreaterThan(0.5);
       expect(distance).toBeLessThan(1.5);
+    });
+  });
+
+  describe('cumulativeDistances / pointAtKm', () => {
+    const line = [[6, 44], [6, 44.01], [6, 44.02]];
+    const cumulative = cumulativeDistances(line);
+
+    test('devrait cumuler les distances', () => {
+      expect(cumulative[0]).toBe(0);
+      expect(cumulative[2]).toBeCloseTo(2 * cumulative[1], 6);
+    });
+
+    test('devrait interpoler un point le long du tracé', () => {
+      const [lon, lat] = pointAtKm(line, cumulative, cumulative[1] / 2);
+      expect(lon).toBeCloseTo(6, 6);
+      expect(lat).toBeCloseTo(44.005, 4);
+    });
+
+    test('devrait borner aux extrémités', () => {
+      expect(pointAtKm(line, cumulative, -1)).toEqual([6, 44]);
+      expect(pointAtKm(line, cumulative, 99)).toEqual([6, 44.02]);
+    });
+  });
+
+  describe('bboxAround', () => {
+    test('devrait produire un carré centré', () => {
+      const [s, w, n, e] = bboxAround(44, 6, 10);
+      expect(haversineDistance([6, s], [6, n])).toBeCloseTo(20, 0);
+      expect(haversineDistance([w, 44], [e, 44])).toBeCloseTo(20, 0);
     });
   });
 });

@@ -1,1 +1,1 @@
-export { default } from "./MapView";
+export { default, SURFACE_STYLES } from "./MapView";
