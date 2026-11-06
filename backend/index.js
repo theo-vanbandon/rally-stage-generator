@@ -27,7 +27,7 @@ app.use("/api/generate", generateRoutes);
 
 // Health check
 app.get("/api/ping", (req, res) => {
-  res.json({ ok: true, version: "backend v4" });
+  res.json({ ok: true, version: "backend v5" });
 });
 
 // Démarrage

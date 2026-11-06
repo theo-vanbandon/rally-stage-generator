@@ -8,19 +8,22 @@
     "dev": "nodemon index.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "validate": "node scripts/validate-france.js"
   },
-  "keywords": ["rally", "stage", "generator", "openstreetmap"],
+  "keywords": [
+    "rally",
+    "stage",
+    "generator",
+    "openstreetmap"
+  ],
   "author": "",
   "license": "MIT",
   "type": "commonjs",
   "dependencies": {
-    "@turf/turf": "^7.3.0",
     "axios": "^1.13.2",
     "cors": "^2.8.5",
-    "express": "^5.1.0",
-    "graphlib": "^2.1.8",
-    "osmtogeojson": "^3.0.0-beta.5"
+    "express": "^5.1.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

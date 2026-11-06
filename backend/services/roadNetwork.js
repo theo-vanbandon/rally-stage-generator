@@ -1,0 +1,333 @@
+/**
+ * Construction du graphe routier et caractérisation "rallye" de chaque tronçon
+ */
+const {
+  haversineKm,
+  bearing,
+  signedAngle,
+  lineLengthKm,
+  resample,
+  createProjection,
+} = require("../utils/geometry");
+
+const STEP_KM = 0.025; // pas de rééchantillonnage pour mesurer la courbure
+const NOISE_DEG = 2; // variations de cap ignorées (bruit de numérisation)
+const STRAIGHT_TOLERANCE_DEG = 6;
+const STRAIGHT_MIN_KM = 0.3; // une "ligne droite" compte à partir de 300 m
+const SAMPLE_EVERY = 2; // un échantillon sur 2 (50 m) conservé pour la détection de chevauchement
+const DENSITY_CELL_KM = 0.25;
+const DENSITY_STEP_KM = 0.05;
+const DENSE_URBAN_KM = 4.5; // km de rues urbaines dans 750 m × 750 m au-delà duquel on est en centre-bourg/ville
+const ANCHOR_IMPORTANCE = 3; // routes d'importance 1 à 3 : réseau principal, mène toujours quelque part
+const BORDER_KM = 0.3;
+const BRANCH_KEEP_M = 60; // points IGN gardés au départ de chaque route d'un carrefour (tulipes)
+const BRANCH_FAR_M = 150;
+
+/**
+ * Type de revêtement d'un tronçon (null = non roulable en spéciale)
+ */
+function surfaceOf(seg) {
+  if (seg.nature === "Route à 1 chaussée") return "paved";
+  if (seg.nature === "Route empierrée") return "gravel";
+  if (seg.nature === "Chemin") return "dirt";
+  return null;
+}
+
+/**
+ * Le tronçon peut-il accueillir une spéciale ? (indépendant du mode de revêtement)
+ */
+function isDrivable(seg) {
+  if (!surfaceOf(seg)) return false;
+  if (seg.access !== "Libre") return false;
+  if (seg.private || seg.greenway) return false;
+  if (seg.direction === "Sens direct" || seg.direction === "Sens inverse") return false;
+  if (seg.importance <= 2) return false;
+  if (seg.level === "Gué ou radier") return false;
+  return true;
+}
+
+/**
+ * Préférence de base selon le gabarit : les petites routes étroites sont les plus "rallye"
+ */
+function basePreference(seg) {
+  const byImportance = { 3: 0.5, 4: 0.85, 5: 1, 6: 0.7 }[seg.importance] ?? 0.7;
+  let widthFactor = 1;
+  if ((seg.width && seg.width >= 6.5) || (seg.lanes && seg.lanes >= 3)) widthFactor = 0.6;
+  else if (seg.width && seg.width <= 4) widthFactor = 1.1;
+  else if (seg.lanes === 1) widthFactor = 1.1;
+  return byImportance * widthFactor;
+}
+
+/**
+ * Complète les altitudes manquantes par interpolation linéaire le long du tronçon
+ */
+function fillElevations(coords) {
+  const z = coords.map((c) => c[2]);
+  const known = z.map((v, i) => (v === null ? -1 : i)).filter((i) => i >= 0);
+  if (known.length === 0) return z;
+  for (let i = 0; i < z.length; i++) {
+    if (z[i] !== null) continue;
+    const prev = known.filter((k) => k < i).pop();
+    const next = known.find((k) => k > i);
+    if (prev === undefined) z[i] = z[next];
+    else if (next === undefined) z[i] = z[prev];
+    else z[i] = z[prev] + ((z[next] - z[prev]) * (i - prev)) / (next - prev);
+  }
+  return z;
+}
+
+/**
+ * Mesures géométriques d'un tronçon : sinuosité, lignes droites, caps d'entrée/sortie
+ */
+function measureShape(coords2d) {
+  const pts = resample(coords2d, STEP_KM);
+  const headings = [];
+  const stepLengths = [];
+  for (let i = 1; i < pts.length; i++) {
+    const d = haversineKm(pts[i - 1], pts[i]);
+    if (d < 1e-6) continue;
+    headings.push(bearing(pts[i - 1], pts[i]));
+    stepLengths.push(d);
+  }
+
+  let twistDeg = 0;
+  let straightKm = 0;
+  let longestStraightKm = 0;
+  let runHeading = headings[0];
+  let runKm = stepLengths[0] || 0;
+
+  const closeRun = () => {
+    if (runKm >= STRAIGHT_MIN_KM) straightKm += runKm;
+    if (runKm > longestStraightKm) longestStraightKm = runKm;
+  };
+
+  for (let i = 1; i < headings.length; i++) {
+    const delta = Math.abs(signedAngle(headings[i - 1], headings[i]));
+    if (delta > NOISE_DEG) twistDeg += Math.min(delta, 90);
+
+    if (Math.abs(signedAngle(runHeading, headings[i])) <= STRAIGHT_TOLERANCE_DEG) {
+      runKm += stepLengths[i];
+    } else {
+      closeRun();
+      runHeading = headings[i];
+      runKm = stepLengths[i];
+    }
+  }
+  closeRun();
+
+  // Caps mesurés sur ~50 m pour ne pas dépendre du tout premier sommet
+  const k = Math.min(2, pts.length - 1);
+  const headStart = bearing(pts[0], pts[k]);
+  const headEnd = bearing(pts[pts.length - 1 - k], pts[pts.length - 1]);
+
+  return { pts, twistDeg, straightKm, longestStraightKm, headStart, headEnd };
+}
+
+/**
+ * Supprime les centres urbains (villes, centres-bourgs) mais garde les rues des hameaux et l'habitat
+ * le long des routes de campagne, très fréquent dans le Nord et classé "urbain" par l'IGN.
+ *
+ * Critère : densité de rues urbaines autour du tronçon (km de rues dans une fenêtre de 750 m × 750 m).
+ * Ordres de grandeur mesurés : Lille ≥ 7,5 ; centre de Laventie 6,9 ; centre de Fleurbaix 5,8 ;
+ * hameau des Rouges Bancs 1,7.
+ *
+ * @param {Array} segments
+ * @param {{toXY: Function}} projection
+ */
+function dropDenseUrbanAreas(segments, projection) {
+  const urban = segments.filter((s) => s.urban);
+  const grid = new Map();
+  const cellKey = (x, y) => `${Math.floor(x / DENSITY_CELL_KM)},${Math.floor(y / DENSITY_CELL_KM)}`;
+
+  const urbanSamples = urban.map((s) => resample(s.coords.map((c) => [c[0], c[1]]), DENSITY_STEP_KM).map(projection.toXY));
+  for (const samples of urbanSamples) {
+    for (const [x, y] of samples) grid.set(cellKey(x, y), (grid.get(cellKey(x, y)) || 0) + DENSITY_STEP_KM);
+  }
+
+  const densityAt = ([x, y]) => {
+    let total = 0;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) total += grid.get(cellKey(x + dx * DENSITY_CELL_KM, y + dy * DENSITY_CELL_KM)) || 0;
+    }
+    return total;
+  };
+
+  // Densité médiane le long du tronçon : une route de campagne qui touche le bord d'un bourg reste utilisable
+  const dense = new Set();
+  urban.forEach((s, i) => {
+    const densities = urbanSamples[i].map(densityAt).sort((a, b) => a - b);
+    if (densities[Math.floor((densities.length - 1) / 2)] >= DENSE_URBAN_KM) dense.add(s);
+  });
+  return segments.filter((s) => !dense.has(s));
+}
+
+/**
+ * Gabarit d'une branche dans une tulipe : grand axe (trait épais), route, piste (pointillés)
+ */
+function branchKind(seg) {
+  if (seg.nature === "Route empierrée" || seg.nature === "Chemin") return "track";
+  if (seg.importance <= ANCHOR_IMPORTANCE || seg.nature !== "Route à 1 chaussée") return "major";
+  return "road";
+}
+
+/**
+ * Forme d'une route au départ d'un carrefour : ses vrais points IGN sur les 60 premiers mètres (plus le point
+ * suivant, pour connaître la courbure au-delà), en décimètres (est, nord) par rapport au carrefour.
+ * Les points ne sont pas rééchantillonnés : la courbe continue est reconstruite à partir d'eux (utils/curve).
+ * @param {Array} coords - Tracé [lon, lat] partant du carrefour
+ */
+function branchShape(coords, projection) {
+  const [x0, y0] = projection.toXY(coords[0]);
+  const out = [];
+  let travelled = 0;
+  let prev = [0, 0];
+  for (let i = 1; i < coords.length; i++) {
+    const [x, y] = projection.toXY(coords[i]);
+    let p = [(x - x0) * 1000, (y - y0) * 1000];
+    const step = Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+    if (step === 0) continue;
+    // Point très lointain (longue ligne droite) : ramené à BRANCH_FAR_M pour rester dans un Int16
+    if (travelled + step > BRANCH_FAR_M) {
+      const t = (BRANCH_FAR_M - travelled) / step;
+      p = [prev[0] + (p[0] - prev[0]) * t, prev[1] + (p[1] - prev[1]) * t];
+    }
+    out.push(Math.round(p[0] * 10), Math.round(p[1] * 10));
+    travelled += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+    prev = p;
+    if (travelled >= BRANCH_KEEP_M) break;
+  }
+  return Int16Array.from(out);
+}
+
+/**
+ * Route utilisable en liaison (rejoindre le départ, quitter l'arrivée) : toute route publique,
+ * y compris en ville et sur les grands axes, mais pas les chemins de terre
+ */
+function isLinkRoad(seg) {
+  if (seg.nature === "Chemin") return false;
+  if (seg.private) return false;
+  return seg.access === "Libre" || seg.access === "A péage";
+}
+
+/**
+ * Construit le graphe à partir des tronçons compacts de la BD TOPO
+ *
+ * - edges : tronçons utilisables en spéciale (hors villes et centres-bourgs)
+ * - nodes[i].links / linkIds : voisins par le réseau de liaison (toutes routes publiques) et route empruntée
+ * - linkGeometries[id] / linkFrom[id] / linkSeg[id] : tracé de chaque route de liaison, son nœud de départ, son tronçon
+ * - nodes[i].branches : toutes les routes du carrefour { seg, kind, shape } pour les tulipes
+ * - nodes[i].anchor : nœud relié au "reste du monde" (grand axe, agglomération, bord de la zone)
+ *
+ * @param {Array} segments - Tronçons (voir bdtopo.compactSegment)
+ * @param {{lat: number, lon: number}} center - Origine de la projection locale
+ */
+function buildNetwork(segments, center) {
+  const projection = createProjection(center.lat, center.lon);
+  const nodeIndex = new Map();
+  const nodes = [];
+  const edges = [];
+  // Géométrie des routes de liaison (tracé du point stop) : tableau plat lon,lat en Float32 (précision ~3 cm)
+  const linkGeometries = [];
+  const linkFrom = [];
+  const stageSegments = new Set(dropDenseUrbanAreas(segments, projection));
+
+  const nodeOf = (c) => {
+    const key = `${c[0]},${c[1]}`;
+    let idx = nodeIndex.get(key);
+    if (idx === undefined) {
+      idx = nodes.length;
+      nodeIndex.set(key, idx);
+      nodes.push({ coord: [c[0], c[1]], edges: [], links: [], linkIds: [], branches: [], roadDegree: 0, anchor: false });
+    }
+    return idx;
+  };
+
+  const linkSeg = [];
+  segments.forEach((seg, segIndex) => {
+    const a = nodeOf(seg.coords[0]);
+    const b = nodeOf(seg.coords[seg.coords.length - 1]);
+    // Intersections du roadbook : on ne compte que les vraies routes, pas les chemins de terre
+    if (seg.nature !== "Chemin") {
+      nodes[a].roadDegree++;
+      nodes[b].roadDegree++;
+    }
+    if (a === b) return;
+
+    // Branches du carrefour pour les tulipes du roadbook : tronçon d'origine, gabarit et forme
+    const kind = branchKind(seg);
+    nodes[a].branches.push({ seg: segIndex, kind, shape: branchShape(seg.coords, projection) });
+    nodes[b].branches.push({ seg: segIndex, kind, shape: branchShape([...seg.coords].reverse(), projection) });
+
+    if (isLinkRoad(seg)) {
+      const linkId = linkGeometries.length;
+      linkGeometries.push(Float32Array.from(seg.coords.flatMap((c) => [c[0], c[1]])));
+      linkFrom.push(a);
+      linkSeg.push(segIndex);
+      nodes[a].links.push(b);
+      nodes[a].linkIds.push(linkId);
+      nodes[b].links.push(a);
+      nodes[b].linkIds.push(linkId);
+      // Un grand axe ou une agglomération mène forcément ailleurs
+      if (seg.importance <= ANCHOR_IMPORTANCE || !stageSegments.has(seg)) {
+        nodes[a].anchor = true;
+        nodes[b].anchor = true;
+      }
+    }
+
+    if (!stageSegments.has(seg) || !isDrivable(seg)) return;
+
+    const coords2d = seg.coords.map((c) => [c[0], c[1]]);
+    const shape = measureShape(coords2d);
+    // Les tronçons de quelques mètres sont gardés : aux carrefours, ils assurent la continuité du réseau
+    const lengthKm = lineLengthKm(coords2d);
+
+    const samples = [];
+    for (let i = 0; i < shape.pts.length; i += SAMPLE_EVERY) samples.push(...projection.toXY(shape.pts[i]));
+
+    const edge = {
+      id: edges.length,
+      seg: segIndex,
+      a,
+      b,
+      coords: coords2d,
+      z: fillElevations(seg.coords),
+      lengthKm,
+      twistDeg: shape.twistDeg,
+      straightKm: shape.straightKm,
+      longestStraightKm: shape.longestStraightKm,
+      headStart: shape.headStart,
+      headEnd: shape.headEnd,
+      samples: Float64Array.from(samples),
+      surface: surfaceOf(seg),
+      basePref: basePreference(seg),
+      ref: seg.ref,
+      name: seg.name,
+      importance: seg.importance,
+      urban: seg.urban === true,
+    };
+    edges.push(edge);
+    nodes[a].edges.push(edge.id);
+    nodes[b].edges.push(edge.id);
+  });
+
+  markBorderAnchors(nodes, projection);
+  return { nodes, edges, projection, linkGeometries, linkFrom, linkSeg };
+}
+
+/**
+ * Les routes qui sortent de la zone téléchargée continuent au-delà : leurs extrémités au bord sont des ancres
+ */
+function markBorderAnchors(nodes, projection) {
+  if (nodes.length === 0) return;
+  const xy = nodes.map((n) => projection.toXY(n.coord));
+  const xs = xy.map((p) => p[0]);
+  const ys = xy.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  xy.forEach(([x, y], i) => {
+    if (x - x0 < BORDER_KM || x1 - x < BORDER_KM || y - y0 < BORDER_KM || y1 - y < BORDER_KM) {
+      nodes[i].anchor = true;
+    }
+  });
+}
+
+module.exports = { buildNetwork, dropDenseUrbanAreas, isDrivable, isLinkRoad, branchKind, branchShape, surfaceOf, basePreference, measureShape, fillElevations };
