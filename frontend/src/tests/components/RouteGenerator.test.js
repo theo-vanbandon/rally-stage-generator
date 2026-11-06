@@ -137,4 +137,18 @@ describe('RouteGenerator Component', () => {
       expect(screen.getByRole('tab', { name: /Tracé 1/ })).toHaveAttribute('aria-selected', 'true');
     });
   });
+
+  test.each(['A5', 'A4'])("imprimer en %s applique ce format avant d'ouvrir l'impression", async (label) => {
+    generateStage.mockResolvedValueOnce(response(['a']));
+    let pageAtPrint = null;
+    window.print = jest.fn(() => {
+      pageAtPrint = document.querySelector('.roadbook-print style').textContent;
+    });
+    render(<RouteGenerator />);
+    await screen.findByText('Nouvelle spéciale');
+
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(window.print).toHaveBeenCalledTimes(1);
+    expect(pageAtPrint).toContain(`size: ${label} portrait`);
+  });
 });

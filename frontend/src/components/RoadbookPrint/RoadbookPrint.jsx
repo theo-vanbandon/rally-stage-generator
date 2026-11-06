@@ -10,15 +10,23 @@ function surfaceSummary({ paved, gravel, dirt }) {
   return `Mixte (${unpaved} % terre)`;
 }
 
+// Format de page : la règle @page ne peut pas dépendre d'une classe, elle est donc injectée selon le format choisi
+export const PRINT_FORMATS = {
+  a5: { label: "A5", page: "A5 portrait", margin: "8mm", tulip: 72 },
+  a4: { label: "A4", page: "A4 portrait", margin: "12mm", tulip: 104 },
+};
+
 /**
- * Roadbook imprimable (A5), mise en page d'organisateur. Invisible à l'écran, seul visible à l'impression.
+ * Roadbook imprimable (A5 ou A4), mise en page d'organisateur. Invisible à l'écran, seul visible à l'impression.
  */
-export default function RoadbookPrint({ stage, esNumber, esName, reversed = false }) {
+export default function RoadbookPrint({ stage, esNumber, esName, reversed = false, format = "a5" }) {
   if (!stage) return null;
   const { stats } = stage;
+  const layout = PRINT_FORMATS[format] ?? PRINT_FORMATS.a5;
 
   return (
-    <div className="roadbook-print">
+    <div className={`roadbook-print format-${format}`}>
+      <style>{`@page { size: ${layout.page}; margin: ${layout.margin}; }`}</style>
       <header className="rbp-header">
         <div className="rbp-es">ES {esNumber}</div>
         <div>
@@ -50,7 +58,7 @@ export default function RoadbookPrint({ stage, esNumber, esName, reversed = fals
               <td className="rbp-km">{c.km.toFixed(2)}</td>
               <td className="rbp-partial">{c.n > 1 ? c.partial.toFixed(2) : ""}</td>
               <td className="rbp-tulip">
-                <CaseSymbol roadbookCase={c} size={72} />
+                <CaseSymbol roadbookCase={c} size={layout.tulip} />
               </td>
               <td className="rbp-info">
                 {c.danger > 0 && <span className="rbp-danger">{dangerMark(c.danger)}</span>}
@@ -81,4 +89,5 @@ RoadbookPrint.propTypes = {
   esNumber: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
   esName: PropTypes.string,
   reversed: PropTypes.bool,
+  format: PropTypes.oneOf(Object.keys(PRINT_FORMATS)),
 };

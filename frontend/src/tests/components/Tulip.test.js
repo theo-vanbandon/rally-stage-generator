@@ -22,7 +22,8 @@ describe('Tulip Component', () => {
     expect(polylines).toHaveLength(3); // autre route, arrivée, sortie
     // La sortie passe par tous les points du virage (pas un simple trait droit)
     const exitPoints = polylines[2].getAttribute('points').split(' ');
-    expect(exitPoints.length).toBe(curvedExit.length + 1);
+    // (le trait s'arrête à la base de la pointe, qui recouvre la fin de la courbe)
+    expect(exitPoints.length).toBeGreaterThanOrEqual(curvedExit.length - 1);
     // Le point d'arrivée est au bout de la route d'arrivée, en bas
     const dot = container.querySelector('circle');
     expect(Number(dot.getAttribute('cy'))).toBeGreaterThan(90);
@@ -64,5 +65,22 @@ describe('Tulip Component', () => {
     const { container } = render(<Tulip tulip={{ entry: null, exit: 0, exitPath: [[0, 1]], others: [] }} />);
     const dot = container.querySelector('circle');
     expect(Number(dot.getAttribute('cy'))).toBe(56);
+  });
+
+  test('la tête de flèche est nettement plus large que le trait, même quand la route file tout droit', () => {
+    const { container } = render(
+      <Tulip tulip={{ entry: 'road', entryPath: [[0, -1]], exit: 0, exitPath: [[0, 0.25], [0, 0.5], [0, 0.75], [0, 1]], others: [] }} />
+    );
+    const [tip, left, right] = container
+      .querySelector('polygon')
+      .getAttribute('points')
+      .split(' ')
+      .map((p) => p.split(',').map(Number));
+    expect(Math.hypot(left[0] - right[0], left[1] - right[1])).toBeGreaterThanOrEqual(3 * 8); // trait de 8
+    expect(tip[1]).toBeLessThan(left[1]); // pointe vers le haut
+    // Le trait s'arrête à la base de la tête, sans revenir en arrière
+    const line = container.querySelectorAll('polyline')[1].getAttribute('points').split(' ').map((p) => p.split(',').map(Number));
+    const ys = line.map(([, y]) => y);
+    expect(ys).toEqual([...ys].sort((a, b) => b - a));
   });
 });

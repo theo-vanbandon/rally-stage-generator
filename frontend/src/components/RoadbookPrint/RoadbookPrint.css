@@ -1,14 +1,9 @@
-/* Roadbook imprimable : caché à l'écran, seul élément imprimé */
+/* Roadbook imprimable : caché à l'écran, seul élément imprimé (format de page injecté par RoadbookPrint) */
 .roadbook-print {
   display: none;
 }
 
 @media print {
-  @page {
-    size: A5 portrait;
-    margin: 8mm;
-  }
-
   html,
   body,
   #root {
@@ -141,6 +136,64 @@
   .rbp-finish .rbp-info strong,
   .rbp-stop .rbp-info strong {
     text-transform: uppercase;
+  }
+
+  /* A4 : même mise en page, tout est agrandi pour remplir la page */
+  .format-a4 {
+    font-size: 12pt;
+  }
+
+  .format-a4 .rbp-es {
+    font-size: 22pt;
+    padding: 3mm 4mm;
+  }
+
+  .format-a4 .rbp-header h1 {
+    font-size: 19pt;
+  }
+
+  .format-a4 .rbp-header p,
+  .format-a4 .rbp-reverse {
+    font-size: 12pt;
+  }
+
+  .format-a4 .rbp-table th {
+    font-size: 10pt;
+    padding: 1.5mm;
+  }
+
+  .format-a4 .rbp-table td {
+    padding: 2mm;
+  }
+
+  .format-a4 .rbp-n {
+    width: 13mm;
+    font-size: 18pt;
+  }
+
+  .format-a4 .rbp-km,
+  .format-a4 .rbp-partial {
+    width: 22mm;
+  }
+
+  .format-a4 .rbp-km {
+    font-size: 16pt;
+  }
+
+  .format-a4 .rbp-partial {
+    font-size: 13pt;
+  }
+
+  .format-a4 .rbp-tulip {
+    width: 32mm;
+  }
+
+  .format-a4 .rbp-danger {
+    font-size: 18pt;
+  }
+
+  .format-a4 .rbp-footer {
+    font-size: 9pt;
   }
 
   .rbp-footer {

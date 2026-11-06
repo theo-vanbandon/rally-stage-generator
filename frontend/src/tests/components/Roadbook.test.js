@@ -48,4 +48,14 @@ describe('RoadbookPrint Component', () => {
     expect(screen.getByText(/12.50 km · Mixte \(20 % terre\)/)).toBeInTheDocument();
     expect(container.querySelectorAll('tbody tr')).toHaveLength(5);
   });
+
+  test.each([
+    ['a5', 'A5 portrait', '72'],
+    ['a4', 'A4 portrait', '104'],
+  ])('format %s : page %s et tulipes adaptées', (format, page, tulipSize) => {
+    const { container } = render(<RoadbookPrint stage={mockStage} esNumber="1" format={format} />);
+    expect(container.querySelector('style').textContent).toContain(`size: ${page}`);
+    expect(container.querySelector('.roadbook-print')).toHaveClass(`format-${format}`);
+    expect(container.querySelector('svg.tulip')).toHaveAttribute('width', tulipSize);
+  });
 });

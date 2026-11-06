@@ -40,18 +40,43 @@ Branch.propTypes = {
   path: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)),
 };
 
-/** Flèche de sortie : tracé réel, tête orientée selon la fin de la route */
+// Tête de flèche nettement plus large que le trait (8) pour rester visible même quand la route file tout droit
+const HEAD_LENGTH = 15;
+const HEAD_HALF_WIDTH = 12;
+const HEAD_TIP = 3; // la pointe dépasse un peu le bout de la route
+
+/**
+ * Flèche de sortie : tracé réel coupé à la base de la tête ; la tête est orientée selon la fin de la route
+ * mesurée sur toute sa longueur (et non sur les deux derniers points, trop proches pour être fiables)
+ */
 function ExitArrow({ points }) {
   const end = points.at(-1);
-  const before = points.at(-2);
-  const len = Math.hypot(end[0] - before[0], end[1] - before[1]) || 1;
-  const [dx, dy] = [(end[0] - before[0]) / len, (end[1] - before[1]) / len];
-  const tip = [end[0] + dx * 3, end[1] + dy * 3];
-  const base = [end[0] - dx * 8, end[1] - dy * 8];
-  const head = [tip, [base[0] - dy * 9, base[1] + dx * 9], [base[0] + dy * 9, base[1] - dx * 9]];
+  // Base de la tête : HEAD_LENGTH en arrière le long du tracé
+  let base = points[0];
+  let keep = 1;
+  let travelled = 0;
+  for (let i = points.length - 1; i > 0; i--) {
+    const [a, b] = [points[i], points[i - 1]];
+    const step = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    if (travelled + step >= HEAD_LENGTH) {
+      const t = (HEAD_LENGTH - travelled) / step;
+      base = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      keep = i;
+      break;
+    }
+    travelled += step;
+  }
+  const len = Math.hypot(end[0] - base[0], end[1] - base[1]) || 1;
+  const [dx, dy] = [(end[0] - base[0]) / len, (end[1] - base[1]) / len];
+  const tip = [end[0] + dx * HEAD_TIP, end[1] + dy * HEAD_TIP];
+  const head = [
+    tip,
+    [base[0] - dy * HEAD_HALF_WIDTH, base[1] + dx * HEAD_HALF_WIDTH],
+    [base[0] + dy * HEAD_HALF_WIDTH, base[1] - dx * HEAD_HALF_WIDTH],
+  ];
   return (
     <>
-      <polyline points={pointsAttr([...points.slice(0, -1), base])} className="tulip-path" />
+      <polyline points={pointsAttr([...points.slice(0, keep), base])} className="tulip-path" />
       <polygon points={pointsAttr(head)} className="tulip-arrow" />
     </>
   );

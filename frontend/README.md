@@ -12,7 +12,7 @@ Interface React du générateur de spéciales de rallye.
 - Statistiques : longueur, sinuosité, lignes droites, dénivelé, pente max, revêtement
 - Profil d'altitude interactif (le survol positionne un repère sur la carte)
 - Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case
-- Impression du roadbook en A5 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
+- Impression du roadbook en A5 ou A4 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
 - Export **GPX** (avec altitudes et waypoints PK), **KML** (3D) et **GeoJSON**
 - Lien partageable : l'URL contient la zone, les options, la graine, le tracé affiché et le sens, et régénère exactement la même spéciale
 

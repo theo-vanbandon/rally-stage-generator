@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import MapView, { SURFACE_STYLES } from "../MapView";
 import SpecialeStats from "../SpecialeStats";
 import CommuneSearch from "../CommuneSearch";
 import ElevationProfile from "../ElevationProfile";
 import Roadbook from "../Roadbook";
-import RoadbookPrint from "../RoadbookPrint";
+import RoadbookPrint, { PRINT_FORMATS } from "../RoadbookPrint";
 import { generateStage, pingBackend } from "../../services/api";
 import { exportGeoJSON, exportKML, exportGPX, stageFilename } from "../../services/exportService";
 import { cumulativeDistances, pointAtKm } from "../../utils/geometry";
@@ -112,6 +113,13 @@ export default function RouteGenerator() {
   const [copied, setCopied] = useState(false);
   const [esNumber, setEsNumber] = useState("1");
   const [esName, setEsName] = useState("");
+  const [printFormat, setPrintFormat] = useState("a5");
+
+  // Le format doit être appliqué (règle @page) avant d'ouvrir la fenêtre d'impression
+  const printRoadbook = (format) => {
+    flushSync(() => setPrintFormat(format));
+    window.print();
+  };
   const abortRef = useRef(null);
   // Lien partagé : tracé et sens à réafficher après la première génération
   const pendingView = useRef(initial ? { trace: initial.trace, reversed: initial.reversed } : null);
@@ -349,9 +357,14 @@ export default function RouteGenerator() {
                   </label>
                 </div>
                 <Roadbook roadbook={stage.roadbook} onSelect={(c) => setFocusPoint(c.coord)} />
-                <button type="button" className="print-button" onClick={() => window.print()}>
-                  Imprimer le roadbook (A5 / PDF)
-                </button>
+                <div className="print-actions">
+                  <span>Imprimer le roadbook (ou PDF) :</span>
+                  {Object.entries(PRINT_FORMATS).map(([format, { label }]) => (
+                    <button key={format} type="button" className="print-button" onClick={() => printRoadbook(format)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="block">
@@ -409,7 +422,13 @@ export default function RouteGenerator() {
           )}
         </main>
       </div>
-      <RoadbookPrint stage={stage} esNumber={esNumber || "1"} esName={esName || commune?.name} reversed={reversed} />
+      <RoadbookPrint
+        stage={stage}
+        esNumber={esNumber || "1"}
+        esName={esName || commune?.name}
+        reversed={reversed}
+        format={printFormat}
+      />
     </>
   );
 }
