@@ -3,6 +3,7 @@
  */
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
 
 const generateRoutes = require("./routes/generate");
 
@@ -10,6 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
+app.use(compression()); // réponses JSON compressées (spéciale + sens inverse : ~540 Ko → ~140 Ko)
 app.use(express.json());
 
 // CORS - Autoriser le frontend en production et en dev

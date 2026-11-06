@@ -13,7 +13,7 @@ function surfaceSummary({ paved, gravel, dirt }) {
 /**
  * Roadbook imprimable (A5), mise en page d'organisateur. Invisible à l'écran, seul visible à l'impression.
  */
-export default function RoadbookPrint({ stage, esNumber, esName }) {
+export default function RoadbookPrint({ stage, esNumber, esName, reversed = false }) {
   if (!stage) return null;
   const { stats } = stage;
 
@@ -22,7 +22,10 @@ export default function RoadbookPrint({ stage, esNumber, esName }) {
       <header className="rbp-header">
         <div className="rbp-es">ES {esNumber}</div>
         <div>
-          <h1>{esName || "Spéciale"}</h1>
+          <h1>
+            {esName || "Spéciale"}
+            {reversed && <span className="rbp-reverse"> — sens inverse</span>}
+          </h1>
           <p>
             {stats.lengthKm.toFixed(2)} km · {surfaceSummary(stats.surfacePct)}
             {stats.elevation ? ` · D+ ${stats.elevation.gain} m` : ""} · {stats.junctions} carrefours
@@ -77,4 +80,5 @@ RoadbookPrint.propTypes = {
   }),
   esNumber: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
   esName: PropTypes.string,
+  reversed: PropTypes.bool,
 };

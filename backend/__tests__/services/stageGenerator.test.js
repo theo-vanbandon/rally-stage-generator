@@ -228,6 +228,48 @@ describe('Stage Generator Service', () => {
     });
   });
 
+  describe('sens inverse', () => {
+    let stage;
+    beforeAll(() => {
+      [stage] = generateStages(network, { seed: 11 }).stages;
+    });
+
+    test("devrait parcourir exactement le même tracé dans l'autre sens", () => {
+      const { reverse } = stage;
+      expect(reverse.geometry.coordinates.map(coordKey)).toEqual([...stage.geometry.coordinates].reverse().map(coordKey));
+      expect(reverse.start).toEqual(stage.finish);
+      expect(reverse.finish).toEqual(stage.start);
+      expect(reverse.stats.lengthKm).toBeCloseTo(stage.stats.lengthKm, 1);
+      expect(reverse.id).not.toBe(stage.id);
+    });
+
+    test('devrait échanger dénivelés positif et négatif', () => {
+      const { elevation } = stage.stats;
+      expect(Math.abs(stage.reverse.stats.elevation.gain - elevation.loss)).toBeLessThanOrEqual(1);
+      expect(Math.abs(stage.reverse.stats.elevation.loss - elevation.gain)).toBeLessThanOrEqual(1);
+      expect(stage.reverse.stats.elevation.min).toBe(elevation.min);
+      expect(stage.reverse.stats.elevation.max).toBe(elevation.max);
+    });
+
+    test('devrait avoir son propre roadbook complet, avec un point stop après la nouvelle arrivée', () => {
+      const types = stage.reverse.roadbook.map((c) => c.type);
+      expect(types[0]).toBe('start');
+      expect(types.slice(-2)).toEqual(['finish', 'stop']);
+      expect(stage.reverse.stop).not.toBeNull();
+      // Mêmes carrefours, rencontrés dans l'ordre inverse
+      const junctionsOf = (s) => s.roadbook.filter((c) => c.type === 'junction').map((c) => coordKey(c.coord));
+      expect(junctionsOf(stage.reverse)).toEqual([...junctionsOf(stage)].reverse());
+    });
+
+    test("le départ inversé reste accessible et l'arrivée inversée reste ouverte", () => {
+      const keys = new Map(network.nodes.map((n, i) => [coordKey(n.coord), i]));
+      const { reverse } = stage;
+      const stageNodes = new Set(reverse.geometry.coordinates.map(coordKey).filter((k) => keys.has(k)).map((k) => keys.get(k)));
+      expect(hasExit(network, keys.get(coordKey(reverse.start)), stageNodes)).toBe(true);
+      expect(hasExit(network, keys.get(coordKey(reverse.finish)), stageNodes)).toBe(true);
+    });
+  });
+
   describe('roadbook', () => {
     let stage;
     beforeAll(() => {

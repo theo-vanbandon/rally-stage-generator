@@ -53,6 +53,11 @@
     font-size: 14pt;
   }
 
+  .rbp-reverse {
+    font-weight: 400;
+    font-size: 11pt;
+  }
+
   .rbp-header p {
     margin: 1mm 0 0;
     font-size: 9pt;

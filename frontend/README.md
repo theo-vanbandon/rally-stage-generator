@@ -7,13 +7,14 @@ Interface React du générateur de spéciales de rallye.
 - Recherche de commune avec autocomplétion (nom ou code postal, via geo.api.gouv.fr)
 - Choix de la zone (5–20 km), du revêtement (asphalte / terre / mixte) et de la longueur
 - 3 tracés proposés par génération, cliquables sur la carte
+- Sens inverse en un clic : même tracé à l'envers, avec son propre roadbook, profil et point stop
 - Carte avec fonds **Plan IGN**, **photo aérienne IGN** et OpenStreetMap
 - Statistiques : longueur, sinuosité, lignes droites, dénivelé, pente max, revêtement
 - Profil d'altitude interactif (le survol positionne un repère sur la carte)
 - Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case
 - Impression du roadbook en A5 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
 - Export **GPX** (avec altitudes et waypoints PK), **KML** (3D) et **GeoJSON**
-- Lien partageable : l'URL contient la zone, les options et la graine, et régénère exactement la même spéciale
+- Lien partageable : l'URL contient la zone, les options, la graine, le tracé affiché et le sens, et régénère exactement la même spéciale
 
 ## 🏗️ Structure
 ```

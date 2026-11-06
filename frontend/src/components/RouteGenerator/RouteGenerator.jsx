@@ -43,7 +43,19 @@ function readUrlParams() {
     length: LENGTHS.some((l) => l.value === q.get("l")) ? q.get("l") : "medium",
     seed: Number.isInteger(seed) ? seed : undefined,
     avoid: q.get("vu") ? q.get("vu").split(",").filter(Boolean) : [],
+    trace: Math.max(0, (Number.parseInt(q.get("t"), 10) || 1) - 1),
+    reversed: q.get("sens") === "inverse",
   };
+}
+
+/** Tracé affiché et sens de parcours, ajoutés au lien partagé */
+function writeViewParams({ trace, reversed }) {
+  const q = new URLSearchParams(window.location.search);
+  if (trace > 0) q.set("t", String(trace + 1));
+  else q.delete("t");
+  if (reversed) q.set("sens", "inverse");
+  else q.delete("sens");
+  window.history.replaceState(null, "", `?${q}`);
 }
 
 function writeUrlParams({ commune, radiusKm, surface, length, seed, avoid }) {
@@ -91,6 +103,7 @@ export default function RouteGenerator() {
 
   const [result, setResult] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [reversed, setReversed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [slow, setSlow] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -100,11 +113,26 @@ export default function RouteGenerator() {
   const [esNumber, setEsNumber] = useState("1");
   const [esName, setEsName] = useState("");
   const abortRef = useRef(null);
+  // Lien partagé : tracé et sens à réafficher après la première génération
+  const pendingView = useRef(initial ? { trace: initial.trace, reversed: initial.reversed } : null);
   // Tracés déjà proposés pour la recherche en cours (réinitialisé si un paramètre change)
   const seenRef = useRef(initial ? { key: searchKey(initial), ids: initial.avoid } : { key: "", ids: [] });
 
   const stages = useMemo(() => (result ? [result.stage, ...result.alternatives] : []), [result]);
-  const stage = stages[selectedIndex];
+  // Le tracé sélectionné peut être affiché dans l'autre sens (calculé par le serveur avec son propre roadbook)
+  const displayedStages = useMemo(
+    () => stages.map((s, i) => (i === selectedIndex && reversed && s.reverse ? s.reverse : s)),
+    [stages, selectedIndex, reversed]
+  );
+  const stage = displayedStages[selectedIndex];
+
+  const showView = (trace, isReversed) => {
+    setSelectedIndex(trace);
+    setReversed(isReversed);
+    setHoverKm(null);
+    setFocusPoint(null);
+    writeViewParams({ trace, reversed: isReversed });
+  };
 
   const cumulative = useMemo(() => (stage ? cumulativeDistances(stage.geometry.coordinates) : []), [stage]);
   const hoverPoint = stage && hoverKm !== null ? pointAtKm(stage.geometry.coordinates, cumulative, hoverKm) : null;
@@ -144,10 +172,10 @@ export default function RouteGenerator() {
         seenRef.current = { key: usedKey, ids: [...previous.filter((id) => !shownIds.includes(id)), ...shownIds].slice(-MAX_SEEN) };
         if (data.radiusKm !== radiusKm) setRadiusKm(data.radiusKm);
         setResult(data);
-        setSelectedIndex(0);
-        setHoverKm(null);
-        setFocusPoint(null);
         writeUrlParams({ commune, radiusKm: data.radiusKm, surface, length, seed: data.seed, avoid: previous });
+        const view = pendingView.current ?? { trace: 0, reversed: false };
+        pendingView.current = null;
+        showView(Math.min(view.trace, data.alternatives.length), view.reversed);
       } catch (err) {
         if (err.name !== "AbortError") setErrorMsg(err.message || "Erreur inconnue");
       } finally {
@@ -250,7 +278,7 @@ export default function RouteGenerator() {
                       role="tab"
                       aria-selected={i === selectedIndex}
                       className={i === selectedIndex ? "selected" : ""}
-                      onClick={() => setSelectedIndex(i)}
+                      onClick={() => showView(i, reversed)}
                     >
                       <strong>Tracé {i + 1}</strong>
                       <small>{s.stats.lengthKm.toFixed(1)} km</small>
@@ -258,6 +286,15 @@ export default function RouteGenerator() {
                   ))}
                 </div>
               )}
+
+              <button
+                type="button"
+                className={`reverse-toggle${reversed ? " active" : ""}`}
+                aria-pressed={reversed}
+                onClick={() => showView(selectedIndex, !reversed)}
+              >
+                <span aria-hidden="true">⇄</span> {reversed ? "Sens inverse affiché — revenir au sens d'origine" : "Inverser le sens"}
+              </button>
 
               {result.expandedFrom && (
               <p className="notice">
@@ -343,9 +380,9 @@ export default function RouteGenerator() {
 
         <main className="map-pane">
           <MapView
-            stages={stages}
+            stages={displayedStages}
             selectedIndex={selectedIndex}
-            onSelect={setSelectedIndex}
+            onSelect={(i) => showView(i, reversed)}
             searchArea={commune ? { lat: commune.lat, lon: commune.lon, radiusKm } : null}
             hoverPoint={hoverPoint}
             focusPoint={focusPoint}
@@ -372,7 +409,7 @@ export default function RouteGenerator() {
           )}
         </main>
       </div>
-      <RoadbookPrint stage={stage} esNumber={esNumber || "1"} esName={esName || commune?.name} />
+      <RoadbookPrint stage={stage} esNumber={esNumber || "1"} esName={esName || commune?.name} reversed={reversed} />
     </>
   );
 }

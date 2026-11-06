@@ -454,6 +454,20 @@ function stageId(steps) {
   return (h >>> 0).toString(36);
 }
 
+/**
+ * Même tracé parcouru dans l'autre sens. Les contraintes restent vraies sans nouvelle vérification : l'arrivée
+ * d'origine, qui a une sortie, devient un départ accessible ; le départ d'origine, accessible, devient une
+ * arrivée ouverte (les routes à sens unique sont déjà exclues des spéciales).
+ */
+function reverseCandidate(candidate) {
+  const steps = [...candidate.walk.steps].reverse().map(({ edge, forward }) => ({ edge, forward: !forward }));
+  return {
+    ...candidate,
+    id: stageId(steps),
+    walk: { ...candidate.walk, steps, startNode: candidate.walk.endNode, endNode: candidate.walk.startNode },
+  };
+}
+
 function turnLabel(angle) {
   const side = angle > 0 ? "droite" : "gauche";
   const abs = Math.abs(angle);
@@ -470,18 +484,27 @@ function elevationStats(cumKm, z) {
   const valid = z.filter((v) => v !== null);
   if (valid.length < 2) return null;
 
-  let gain = 0;
-  let loss = 0;
-  let ref = valid[0];
-  for (const v of valid) {
-    if (v - ref >= 3) {
-      gain += v - ref;
-      ref = v;
-    } else if (ref - v >= 3) {
-      loss += ref - v;
-      ref = v;
+  // Dénivelés avec un seuil anti-bruit de 3 m. Ce filtre dépend du sens de lecture : on le calcule dans les deux
+  // sens et on fait la moyenne, pour que le D+ d'une spéciale soit exactement le D- de son sens inverse.
+  const hysteresis = (values) => {
+    let up = 0;
+    let down = 0;
+    let ref = values[0];
+    for (const v of values) {
+      if (v - ref >= 3) {
+        up += v - ref;
+        ref = v;
+      } else if (ref - v >= 3) {
+        down += ref - v;
+        ref = v;
+      }
     }
-  }
+    return [up, down];
+  };
+  const [upForward, downForward] = hysteresis(valid);
+  const [upBackward, downBackward] = hysteresis([...valid].reverse());
+  const gain = (upForward + downBackward) / 2;
+  const loss = (downForward + upBackward) / 2;
 
   // Profil rééchantillonné tous les 50 m
   const total = cumKm.at(-1);
@@ -802,7 +825,12 @@ function describeStage(network, prefs, candidate) {
     stepStart.push(from);
 
     pts.forEach((p, k) => {
-      if (i > 0 && k === 0) return; // le carrefour est déjà présent
+      if (i > 0 && k === 0) {
+        // Le carrefour est déjà présent ; les deux tronçons IGN peuvent lui donner une altitude un peu différente :
+        // on garde leur moyenne (même valeur dans les deux sens de parcours)
+        if (z.at(-1) !== null && zs[0] !== null) z[z.length - 1] = (z.at(-1) + zs[0]) / 2;
+        return;
+      }
       if (coords.length) km += haversineKm(coords.at(-1), p);
       coords.push(p);
       z.push(zs[k]);
@@ -1078,7 +1106,11 @@ function generateStages(network, { surface = "asphalt", length = "medium", seed 
   rememberShown(network, chosen);
 
   return {
-    stages: chosen.map((c) => describeStage(network, prefs, c)),
+    // Chaque spéciale est livrée avec son sens inverse : même tracé, roadbook et statistiques recalculés
+    stages: chosen.map((c) => ({
+      ...describeStage(network, prefs, c),
+      reverse: describeStage(network, prefs, reverseCandidate(c)),
+    })),
     relaxed,
     surfaceRelaxed,
     exhausted,
@@ -1178,6 +1210,7 @@ module.exports = {
   buildTulip,
   junctionNotes,
   describeStage,
+  reverseCandidate,
   walkMetres,
   computeReach,
   randomWalk,

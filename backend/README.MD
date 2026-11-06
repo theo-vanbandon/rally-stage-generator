@@ -151,6 +151,8 @@ Les carrefours types (croix, T, fourches ouvertes et fermées, virage arrondi, a
 }
 ```
 
+Chaque spéciale (principale et alternatives) contient `reverse` : le même tracé parcouru dans l'autre sens, au même format (géométrie, roadbook, point stop et statistiques recalculés, D+ et D- échangés). Les réponses sont compressées (gzip).
+
 `relaxed: true` signifie que le réseau rural était trop morcelé pour la longueur demandée : la spéciale est plus courte.
 `surfaceRelaxed: true` signifie que la zone n'a pas assez de pistes reliées : la part de terre exigée a été abaissée (35 % en terre, 10 % en mixte).
 `stage.surfaces` découpe le tracé en portions de revêtement homogène (indices dans `geometry.coordinates`).

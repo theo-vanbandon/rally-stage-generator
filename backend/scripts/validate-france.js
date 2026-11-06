@@ -267,6 +267,13 @@ async function validateCommune([name, postal, radiusKm, profile], index) {
           ...result.stages.flatMap((stage, i) =>
             checkStage(stage, { network, nodeByCoord, surface, length, result }).map((p) => `tracé ${i + 1} : ${p}`)
           ),
+          // Sens inverse : mêmes règles, et même tracé parcouru à l'envers
+          ...result.stages.flatMap((stage, i) => [
+            ...checkStage(stage.reverse, { network, nodeByCoord, surface, length, result }).map(
+              (p) => `tracé ${i + 1} (sens inverse) : ${p}`
+            ),
+            ...(Math.abs(stage.reverse.stats.lengthKm - stage.stats.lengthKm) > 0.05 ? [`tracé ${i + 1} : longueur différente en sens inverse`] : []),
+          ]),
           ...checkAlternatives(result.stages),
         ];
         if (genMs > MAX_GENERATE_MS) problems.push(`génération lente (${genMs} ms)`);
