@@ -1,22 +1,24 @@
 # 🏁 Rally Stage Generator
 
-Générateur automatique de spéciales de rallye basé sur les données OpenStreetMap.
+Générateur automatique de spéciales de rallye sur les petites routes françaises hors agglomération, basé sur la BD TOPO® de l'IGN.
 
 ![Rally Stage Generator](https://img.shields.io/badge/version-1.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 ## 📋 Description
 
-Rally Stage Generator est une application web qui permet de générer automatiquement des tracés de spéciales de rallye autour d'une ville française. L'application utilise les données cartographiques d'OpenStreetMap pour identifier les routes adaptées aux spéciales de rallye et génère un parcours optimisé avec détection automatique des intersections (Points Kilométriques).
+Rally Stage Generator génère des tracés de spéciales de rallye autour d'une commune française. Il s'appuie sur le réseau routier de l'IGN (BD TOPO®) pour écarter les villes et villages, privilégier les petites routes étroites et sinueuses, éviter les lignes droites et les allers-retours, puis produit un roadbook (PK à chaque carrefour, avec la direction) et un profil d'altitude.
 
 ## ✨ Fonctionnalités
 
-- 🗺️ Génération automatique de spéciales de rallye
-- 📍 Détection automatique des intersections (PK)
-- 📊 Statistiques détaillées (longueur, dénivelé, pente moyenne)
-- 🏔️ Récupération des données d'altitude réelles
-- 📤 Export en GeoJSON, KML et GPX
-- 🎨 Visualisation interactive sur carte Leaflet
+- 🗺️ Spéciales hors agglomération, différentes à chaque clic (3 tracés proposés)
+- 🏁 Revêtement au choix : asphalte, terre ou mixte ; longueur courte, moyenne ou longue
+- 📍 Roadbook : PK à chaque carrefour avec la direction à prendre
+- 📊 Statistiques : sinuosité, lignes droites, dénivelé, pente max, revêtement
+- 🏔️ Altitudes IGN intégrées et profil interactif
+- ⚡ Quelques secondes la première fois sur une zone, instantané ensuite (cache)
+- 🔗 Lien partageable qui reproduit exactement la même spéciale
+- 📤 Export GPX (altitudes + waypoints), KML et GeoJSON
 
 ## 🏗️ Architecture
 
@@ -66,27 +68,23 @@ Ouvrir http://localhost:3000 dans votre navigateur.
 
 ## 📖 Utilisation
 
-1. Entrer le nom d'une ville française
-2. Entrer le code postal correspondant
-3. Définir le rayon de recherche (1-15 km)
-4. Cliquer sur "Générer la spéciale"
-5. Visualiser le tracé sur la carte avec les PK
-6. Consulter les statistiques
-7. Exporter le tracé au format souhaité
+1. Chercher une commune (nom ou code postal) et la choisir dans la liste
+2. Régler la zone de recherche (5-20 km), le revêtement et la longueur
+3. Cliquer sur « Générer la spéciale », puis « Nouvelle spéciale » pour en obtenir d'autres
+4. Comparer les 3 tracés proposés, consulter le roadbook et le profil
+5. Exporter le tracé ou copier le lien
 
 ## 🛠️ Technologies utilisées
 
 ### Backend
 - Node.js & Express
-- Overpass API (OpenStreetMap)
-- Turf.js (calculs géospatiaux)
-- Graphlib (algorithmes de graphe)
+- IGN BD TOPO® (WFS Géoplateforme) : réseau routier et altitudes
+- geo.api.gouv.fr : géocodage des communes
+- Générateur maison : marches aléatoires pondérées sur graphe + notation
 
 ### Frontend
 - React
-- Leaflet & React-Leaflet
-- Turf.js
-- Axios
+- Leaflet & React-Leaflet (fonds Plan IGN, photo aérienne, OSM)
 
 ## 🤝 Contribution
 
