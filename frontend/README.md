@@ -14,6 +14,7 @@ Interface React du générateur de spéciales de rallye.
 - Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case
 - Impression du roadbook en A5 ou A4 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
 - Export **GPX** (avec altitudes et waypoints PK), **KML** (3D) et **GeoJSON**
+- Mentions légales (éditeur, hébergeur, sources des données, avertissement, données personnelles), accessibles depuis le pied de page ou par l'adresse `#mentions-legales`
 - Lien partageable : l'URL contient la zone, les options, la graine, le tracé affiché et le sens, et régénère exactement la même spéciale
 
 ## 🏗️ Structure
@@ -25,6 +26,7 @@ frontend/src/
 │   ├── MapView/          # Carte Leaflet (tracés, PK, départ/arrivée, zone de recherche)
 │   ├── SpecialeStats/    # Tuiles de statistiques
 │   ├── ElevationProfile/ # Profil altimétrique SVG
+│   ├── LegalNotice/      # Mentions légales
 │   ├── Roadbook/         # Roadbook à l'écran (cases + symboles)
 │   ├── RoadbookPrint/    # Roadbook imprimable A5
 │   └── Tulip/            # Dessin SVG d'une tulipe

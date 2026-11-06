@@ -6,6 +6,7 @@ import CommuneSearch from "../CommuneSearch";
 import ElevationProfile from "../ElevationProfile";
 import Roadbook from "../Roadbook";
 import RoadbookPrint, { PRINT_FORMATS } from "../RoadbookPrint";
+import LegalNotice from "../LegalNotice";
 import { generateStage, pingBackend } from "../../services/api";
 import { exportGeoJSON, exportKML, exportGPX, stageFilename } from "../../services/exportService";
 import { cumulativeDistances, pointAtKm } from "../../utils/geometry";
@@ -24,6 +25,7 @@ const LENGTHS = [
 ];
 
 const SLOW_HINT_MS = 2500;
+const LEGAL_HASH = "#mentions-legales";
 const MAX_SEEN = 60; // tracés déjà vus envoyés au serveur pour ne pas les reproposer
 
 /** Clé des paramètres de génération : les tracés vus ne comptent que pour une même recherche */
@@ -114,6 +116,14 @@ export default function RouteGenerator() {
   const [esNumber, setEsNumber] = useState("1");
   const [esName, setEsName] = useState("");
   const [printFormat, setPrintFormat] = useState("a5");
+  // Mentions légales : aussi accessibles directement par l'adresse …#mentions-legales
+  const [legalOpen, setLegalOpen] = useState(() => window.location.hash === LEGAL_HASH);
+
+  const showLegal = (open) => {
+    setLegalOpen(open);
+    const { pathname, search } = window.location;
+    window.history.replaceState(null, "", `${pathname}${search}${open ? LEGAL_HASH : ""}`);
+  };
 
   // Le format doit être appliqué (règle @page) avant d'ouvrir la fenêtre d'impression
   const printRoadbook = (format) => {
@@ -388,6 +398,9 @@ export default function RouteGenerator() {
           <footer className="panel-footer">
             Données routières et altitudes : IGN BD TOPO® (Licence Ouverte). Tracés indicatifs : une spéciale réelle
             nécessite l'accord des communes et de la préfecture.
+            <button type="button" className="legal-link" onClick={() => showLegal(true)}>
+              Mentions légales
+            </button>
           </footer>
         </aside>
 
@@ -421,6 +434,7 @@ export default function RouteGenerator() {
             </div>
           )}
         </main>
+        {legalOpen && <LegalNotice onClose={() => showLegal(false)} />}
       </div>
       <RoadbookPrint
         stage={stage}
