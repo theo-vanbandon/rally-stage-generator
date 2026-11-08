@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
   MapContainer,
@@ -11,10 +11,11 @@ import {
   Tooltip,
   ScaleControl,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { bboxAround } from "../../utils/geometry";
+import { bboxAround, cumulativeDistances, loopArrows, pointAtKm } from "../../utils/geometry";
 import "./MapView.css";
 
 const FRANCE_CENTER = [46.6, 2.5];
@@ -37,6 +38,114 @@ const startIcon = flagIcon("start", "D");
 const finishIcon = flagIcon("finish", "A");
 const stopIcon = flagIcon("stop", "S");
 
+const LOOP_ARROW_COLOR = "#1565c0";
+
+const arrowHeadIcon = (angle) =>
+  new L.DivIcon({
+    // La pointe du triangle (25, 14) est le point d'ancrage et le centre de rotation : elle tombe exactement au bout
+    // du trait, quel que soit l'angle
+    html: `<svg class="loop-arrow-head" viewBox="0 0 28 28" style="transform-origin: 25px 14px; transform: rotate(${angle.toFixed(0)}deg)"><path d="M6 4 L25 14 L6 24 L10 14 Z"/></svg>`,
+    className: "loop-arrow-head-icon",
+    iconSize: [28, 28],
+    iconAnchor: [25, 14],
+  });
+
+const sharedIcon = new L.DivIcon({
+  html: '<span class="shared-badge" aria-hidden="true">2×</span>',
+  className: "loop-hub-icon",
+  iconSize: [30, 20],
+  iconAnchor: [15, 10],
+});
+
+const loopIcon = new L.DivIcon({
+  html: '<span class="loop-hub" aria-hidden="true"><b>2×</b></span>',
+  className: "loop-hub-icon",
+  iconSize: [34, 34],
+  iconAnchor: [17, 17],
+});
+
+/** Indice du point du tracé le plus proche d'un kilométrage donné */
+const indexAtKm = (cumulative, km) => {
+  let best = 0;
+  cumulative.forEach((d, i) => {
+    if (Math.abs(d - km) < Math.abs(cumulative[best] - km)) best = i;
+  });
+  return best;
+};
+
+/**
+ * Grosses flèches de sens de la boucle, dessinées à côté du tracé (côté extérieur), jamais sur un autre
+ * morceau de la spéciale. Recalculées à chaque zoom pour garder le même écart à l'écran.
+ */
+function LoopArrows({ coords, loop }) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
+  // Le recadrage sur la spéciale (FitToStage) a lieu avant que l'écoute du zoom soit en place
+  useEffect(() => setZoom(map.getZoom()), [map, coords]);
+
+  const cumulative = useMemo(() => cumulativeDistances(coords), [coords]);
+  const arrows = useMemo(() => {
+    const pts = coords.map(([lon, lat]) => {
+      const p = map.project([lat, lon], zoom);
+      return [p.x, p.y];
+    });
+    // Portion commune : les flèches font le tour complet (portion + boucle)
+    const range = [indexAtKm(cumulative, loop.sharedFromKm ?? loop.fromKm), indexAtKm(cumulative, loop.fromKm + loop.lengthKm)];
+    const toLatLng = ([x, y]) => map.unproject([x, y], zoom);
+    return loopArrows(pts, range).map(({ shaft, head }) => ({
+      shaft: shaft.map(toLatLng),
+      head: { position: toLatLng([head.x, head.y]), angle: head.angle },
+    }));
+  }, [map, coords, cumulative, loop, zoom]);
+
+  return arrows.map(({ shaft, head }, i) => (
+    <React.Fragment key={`${zoom}-${i}`}>
+      <Polyline positions={shaft} pathOptions={STYLES.loopArrowCasing} />
+      <Polyline positions={shaft} pathOptions={STYLES.loopArrow} />
+      <Marker position={head.position} icon={arrowHeadIcon(head.angle)} interactive={false} keyboard={false} />
+    </React.Fragment>
+  ));
+}
+
+LoopArrows.propTypes = {
+  coords: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)).isRequired,
+  loop: PropTypes.shape({ fromKm: PropTypes.number, lengthKm: PropTypes.number, sharedFromKm: PropTypes.number }).isRequired,
+};
+
+/** Portion commune (parcourue deux fois) surlignée sous le tracé, avec un badge « 2× » en son milieu */
+function SharedPortion({ coords, loop }) {
+  const cumulative = useMemo(() => cumulativeDistances(coords), [coords]);
+  const { positions, badge } = useMemo(() => {
+    const from = indexAtKm(cumulative, loop.sharedFromKm);
+    const to = indexAtKm(cumulative, loop.sharedFromKm + loop.sharedKm);
+    const mid = pointAtKm(coords, cumulative, loop.sharedFromKm + loop.sharedKm / 2);
+    return { positions: toLatLngs(coords.slice(from, to + 1)), badge: [mid[1], mid[0]] };
+  }, [coords, cumulative, loop]);
+  const secondKm = loop.fromKm + loop.lengthKm;
+  return (
+    <>
+      <Polyline positions={positions} pathOptions={STYLES.sharedPortion} />
+      <Marker position={badge} icon={sharedIcon} zIndexOffset={800}>
+        <Tooltip direction="top" offset={[0, -12]}>
+          Portion commune parcourue deux fois dans le même sens : km {loop.sharedFromKm.toFixed(2)} →{" "}
+          {loop.fromKm.toFixed(2)}, puis km {secondKm.toFixed(2)} → {(secondKm + loop.sharedKm).toFixed(2)}
+        </Tooltip>
+      </Marker>
+    </>
+  );
+}
+
+SharedPortion.propTypes = {
+  coords: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)).isRequired,
+  loop: PropTypes.shape({
+    sharedFromKm: PropTypes.number,
+    sharedKm: PropTypes.number,
+    fromKm: PropTypes.number,
+    lengthKm: PropTypes.number,
+  }).isRequired,
+};
+
 const toLatLngs = (coords) => coords.map(([lon, lat]) => [lat, lon]);
 
 // Styles Leaflet (appliqués via setStyle : pas de variables CSS possibles ici)
@@ -48,6 +157,9 @@ const STYLES = {
   pk: { color: "#ffffff", weight: 2, fillColor: "#263238", fillOpacity: 1 },
   hover: { color: "#ffffff", weight: 3, fillColor: "#e53935", fillOpacity: 1, interactive: false },
   stopPath: { color: "#263238", weight: 3, dashArray: "2 7", interactive: false },
+  sharedPortion: { color: LOOP_ARROW_COLOR, weight: 16, opacity: 0.45, lineCap: "round", interactive: false },
+  loopArrowCasing: { color: "#ffffff", weight: 9, opacity: 0.95, lineCap: "round", interactive: false },
+  loopArrow: { color: LOOP_ARROW_COLOR, weight: 5, opacity: 1, lineCap: "round", interactive: false },
 };
 
 // Style du tracé selon le revêtement (voir la légende dans RouteGenerator).
@@ -144,6 +256,9 @@ export default function MapView({
 
       {selectedLine && (
         <>
+          {selected.stats.loop?.kind === "shared" && (
+            <SharedPortion coords={selected.geometry.coordinates} loop={selected.stats.loop} />
+          )}
           <Polyline positions={selectedLine} pathOptions={STYLES.casing} />
           {(selected.surfaces?.length ? selected.surfaces : [{ surface: "paved", from: 0, to: selectedLine.length - 1 }]).map(
             (section) => (
@@ -155,6 +270,16 @@ export default function MapView({
             )
           )}
           <FitToStage positions={selectedLine} />
+          {selected.stats.loop && <LoopArrows coords={selected.geometry.coordinates} loop={selected.stats.loop} />}
+
+          {selected.stats.loop?.kind !== "shared" && selected.stats.loop && (
+            <Marker position={[selected.stats.loop.coord[1], selected.stats.loop.coord[0]]} icon={loopIcon} zIndexOffset={800}>
+              <Tooltip direction="top" offset={[0, -16]}>
+                Carrefour de la boucle : 1er passage au km {selected.stats.loop.fromKm.toFixed(2)}, 2e au km{" "}
+                {(selected.stats.loop.fromKm + selected.stats.loop.lengthKm).toFixed(2)}
+              </Tooltip>
+            </Marker>
+          )}
 
           {selected.roadbook
             .filter((c) => c.type === "junction" || c.type === "surface")
@@ -212,7 +337,10 @@ const stageShape = PropTypes.shape({
   surfaces: PropTypes.arrayOf(
     PropTypes.shape({ surface: PropTypes.string, from: PropTypes.number, to: PropTypes.number })
   ),
-  stats: PropTypes.shape({ lengthKm: PropTypes.number }).isRequired,
+  stats: PropTypes.shape({
+    lengthKm: PropTypes.number,
+    loop: PropTypes.shape({ fromKm: PropTypes.number, lengthKm: PropTypes.number, coord: PropTypes.arrayOf(PropTypes.number) }),
+  }).isRequired,
 });
 
 MapView.propTypes = {

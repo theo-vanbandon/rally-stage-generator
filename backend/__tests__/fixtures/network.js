@@ -27,7 +27,7 @@ function segment(coords, overrides = {}) {
 /**
  * Ligne sinueuse de a vers b (sinusoïde perpendiculaire), altitude croissante
  */
-function wiggly(a, b, { amplitude = 0.0015, waves = 3, points = 30, z0 = 500 } = {}) {
+function wigglyLine(a, b, { amplitude = 0.0015, waves = 3, points = 30, z0 = 500 } = {}) {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const len = Math.hypot(dx, dy);
@@ -45,10 +45,11 @@ function wiggly(a, b, { amplitude = 0.0015, waves = 3, points = 30, z0 = 500 } =
 }
 
 /**
- * Grille size × size de routes sinueuses (~1 km entre carrefours)
+ * Grille size × size de routes sinueuses (~1 km entre carrefours par défaut)
  */
-function gridSegments({ size = 6, step = 0.01, overrides = () => ({}) } = {}) {
+function gridSegments({ size = 6, step = 0.01, amplitude, overrides = () => ({}) } = {}) {
   const node = (i, j) => [LON0 + i * step, LAT0 + j * step];
+  const wiggly = (a, b) => wigglyLine(a, b, amplitude === undefined ? {} : { amplitude });
   const segments = [];
   for (let i = 0; i < size; i++) {
     for (let j = 0; j < size; j++) {
@@ -59,4 +60,4 @@ function gridSegments({ size = 6, step = 0.01, overrides = () => ({}) } = {}) {
   return segments;
 }
 
-module.exports = { segment, wiggly, gridSegments, CENTER: { lat: LAT0, lon: LON0 } };
+module.exports = { segment, wiggly: wigglyLine, gridSegments, CENTER: { lat: LAT0, lon: LON0 } };

@@ -33,6 +33,17 @@ describe('SpecialeStats Component', () => {
     expect(screen.queryByText('Dénivelé')).not.toBeInTheDocument();
   });
 
+  test('devrait afficher la boucle seulement si la spéciale en a une', () => {
+    const { rerender } = render(<SpecialeStats stats={stats} />);
+    expect(screen.queryByText('Boucle')).not.toBeInTheDocument();
+    rerender(<SpecialeStats stats={{ ...stats, loop: { fromKm: 2.85, lengthKm: 3.32, coord: [2.8, 50.6] } }} />);
+    expect(screen.getByText('Boucle')).toBeInTheDocument();
+    expect(screen.getByText('3.3 km')).toBeInTheDocument();
+    expect(screen.getByText('dès le km 2.9')).toBeInTheDocument();
+    rerender(<SpecialeStats stats={{ ...stats, loop: { kind: 'shared', sharedFromKm: 2, sharedKm: 0.82, fromKm: 2.82, lengthKm: 3.4, coord: [2.8, 50.6] } }} />);
+    expect(screen.getByText('+ portion commune 0.8 km × 2')).toBeInTheDocument();
+  });
+
   test('ne devrait rien afficher si stats est null', () => {
     const { container } = render(<SpecialeStats stats={null} />);
     expect(container).toBeEmptyDOMElement();

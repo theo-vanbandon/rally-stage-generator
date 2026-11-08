@@ -89,6 +89,49 @@ describe('RouteGenerator Component', () => {
     expect(window.location.search).toContain('r=10');
   });
 
+  describe('boucle', () => {
+    const loopStage = (id, loop = { kind: 'junction', fromKm: 2.85, lengthKm: 3.32, coord: [2.8, 50.6] }) => ({
+      ...withReverse(id),
+      stats: { ...mockStage.stats, loop },
+    });
+
+    test("devrait demander une boucle par un carrefour et l'inscrire dans le lien", async () => {
+      generateStage.mockResolvedValue(response(['a']));
+      render(<RouteGenerator />);
+      await screen.findByText('Nouvelle spéciale');
+      expect(generateStage.mock.calls[0][0].loop).toBe(false);
+
+      generateStage.mockResolvedValue(response(['b'], { stage: loopStage('b') }));
+      fireEvent.click(screen.getByLabelText(/Carrefour/));
+      fireEvent.click(screen.getByText('Nouvelle spéciale'));
+      await waitFor(() => expect(generateStage).toHaveBeenCalledTimes(2));
+      // Changer d'option repart de zéro : les tracés sans boucle déjà vus ne comptent pas
+      expect(generateStage.mock.calls[1][0]).toEqual(expect.objectContaining({ loop: 'junction', avoid: [] }));
+      expect(await screen.findByText(/Boucle de 3\.3 km/)).toBeInTheDocument();
+      expect(window.location.search).toContain('b=1');
+    });
+
+    test('un lien partagé avec boucle la redemande', async () => {
+      window.history.replaceState(null, '', '/?name=Laventie&cp=62840&lat=50.6094&lon=2.7884&r=5&s=asphalt&l=medium&b=1&seed=3');
+      generateStage.mockResolvedValueOnce(response(['a'], { stage: loopStage('a') }));
+      render(<RouteGenerator />);
+      expect(await screen.findByText(/Boucle de 3\.3 km/)).toBeInTheDocument();
+      expect(generateStage.mock.calls[0][0]).toEqual(expect.objectContaining({ loop: 'junction', seed: 3 }));
+      expect(screen.getByLabelText(/Carrefour/)).toBeChecked();
+    });
+
+    test('devrait proposer la boucle avec portion commune (b=2 dans le lien)', async () => {
+      window.history.replaceState(null, '', '/?name=Laventie&cp=62840&lat=50.6094&lon=2.7884&r=5&s=asphalt&l=medium&b=2&seed=3');
+      const shared = { kind: 'shared', sharedFromKm: 2.1, sharedKm: 0.82, fromKm: 2.92, lengthKm: 3.4, coord: [2.8, 50.6] };
+      generateStage.mockResolvedValueOnce(response(['a'], { stage: loopStage('a', shared) }));
+      render(<RouteGenerator />);
+      expect(await screen.findByText(/portion commune de 0\.8 km/)).toBeInTheDocument();
+      expect(generateStage.mock.calls[0][0]).toEqual(expect.objectContaining({ loop: 'shared' }));
+      expect(screen.getByLabelText(/Portion/)).toBeChecked();
+      expect(window.location.search).toContain('b=2');
+    });
+  });
+
   describe('sens inverse', () => {
     test("devrait basculer le tracé affiché dans l'autre sens et revenir", async () => {
       generateStage.mockResolvedValueOnce(response(['a', 'b']));

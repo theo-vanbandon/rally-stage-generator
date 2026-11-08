@@ -50,6 +50,17 @@ export default function SpecialeStats({ stats }) {
         hint={`max ${Math.round(stats.longestStraightKm * 1000)} m`}
       />
       <Stat label="Carrefours" value={stats.junctions} />
+      {stats.loop && (
+        <Stat
+          label="Boucle"
+          value={`${stats.loop.lengthKm.toFixed(1)} km`}
+          hint={
+            stats.loop.kind === "shared"
+              ? `+ portion commune ${stats.loop.sharedKm.toFixed(1)} km × 2`
+              : `dès le km ${stats.loop.fromKm.toFixed(1)}`
+          }
+        />
+      )}
       {elevation && (
         <>
           <Stat label="Dénivelé" value={`+${elevation.gain} / −${elevation.loss} m`} />
@@ -71,6 +82,14 @@ SpecialeStats.propTypes = {
     longestStraightKm: PropTypes.number.isRequired,
     junctions: PropTypes.number.isRequired,
     urbanPct: PropTypes.number,
+    loop: PropTypes.shape({
+      kind: PropTypes.oneOf(["junction", "shared"]),
+      sharedFromKm: PropTypes.number,
+      sharedKm: PropTypes.number,
+      fromKm: PropTypes.number,
+      lengthKm: PropTypes.number,
+      coord: PropTypes.arrayOf(PropTypes.number),
+    }),
     surfacePct: PropTypes.shape({
       paved: PropTypes.number,
       gravel: PropTypes.number,

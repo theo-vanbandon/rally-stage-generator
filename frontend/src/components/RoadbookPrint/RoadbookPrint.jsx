@@ -37,6 +37,11 @@ export default function RoadbookPrint({ stage, esNumber, esName, reversed = fals
           <p>
             {stats.lengthKm.toFixed(2)} km · {surfaceSummary(stats.surfacePct)}
             {stats.elevation ? ` · D+ ${stats.elevation.gain} m` : ""} · {stats.junctions} carrefours
+            {stats.loop?.kind === "shared"
+              ? ` · boucle de ${stats.loop.lengthKm.toFixed(2)} km, portion commune de ${stats.loop.sharedKm.toFixed(2)} km parcourue 2 fois (km ${stats.loop.sharedFromKm.toFixed(2)})`
+              : stats.loop
+                ? ` · boucle de ${stats.loop.lengthKm.toFixed(2)} km (km ${stats.loop.fromKm.toFixed(2)})`
+                : ""}
           </p>
         </div>
       </header>

@@ -48,6 +48,13 @@ describe('Generate Routes', () => {
       expect(searchRadii(20)).toEqual([20]);
     });
 
+    test("ne devrait activer la boucle que sur demande explicite", () => {
+      expect(parseRequest({ place: 'Gap' }).loop).toBe(false);
+      expect(parseRequest({ place: 'Gap', loop: true }).loop).toBe('junction');
+      expect(parseRequest({ place: 'Gap', loop: 'shared' }).loop).toBe('shared');
+      expect(parseRequest({ place: 'Gap', loop: 'oui' }).loop).toBe(false);
+    });
+
     test('devrait accepter des coordonnées sans nom de ville', () => {
       expect(parseRequest({ lat: 44.5, lon: 6 })).toEqual(expect.objectContaining({ lat: 44.5, lon: 6 }));
     });
@@ -129,6 +136,25 @@ describe('Generate Routes', () => {
       expect(response.body.stage.stats.lengthKm).toBeGreaterThan(9);
       expect(response.body.alternatives.length).toBeGreaterThan(0);
       expect(response.body.meta.dataSource).toBe('fresh');
+    });
+
+    test('devrait générer une spéciale avec boucle sur demande', async () => {
+      // Pâtés de ~4 km de tour : de quoi faire une boucle
+      fetchRoads.mockResolvedValue(gridSegments({ size: 9, step: 0.007, amplitude: 0.0006 }));
+      const response = await request(app).post('/api/generate').send({ place: 'Laventie', seed: 3, loop: true });
+
+      expect(response.status).toBe(200);
+      expect(response.body.loop).toBe('junction');
+      expect(response.body.stage.stats.loop.lengthKm).toBeGreaterThan(1);
+      expect(response.body.stage.reverse.stats.loop).not.toBeNull();
+    });
+
+    test("devrait expliquer quand aucune boucle n'est possible", async () => {
+      // Grille par défaut : pâtés de ~8 km de tour, trop grands pour une boucle
+      const response = await request(app).post('/api/generate').send({ place: 'Sospel', radiusKm: 18, loop: true });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error).toMatch(/avec boucle/);
     });
 
     test('devrait réutiliser le réseau en cache pour une nouvelle génération', async () => {

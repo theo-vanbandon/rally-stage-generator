@@ -24,7 +24,7 @@ describe('Mentions légales', () => {
     expect(dialog).toHaveTextContent('édité à titre non professionnel par Théo Vanbandon, responsable de la publication');
     expect(dialog).not.toHaveTextContent('anonym');
     expect(dialog).not.toHaveTextContent('adresse IP');
-    expect(dialog).toHaveTextContent('Render Inc. — 525 Brannan Street, Suite 300, San Francisco');
+    expect(dialog).toHaveTextContent('Render Inc. - 525 Brannan Street, Suite 300, San Francisco');
     expect(dialog).toHaveTextContent('Licence Ouverte Etalab 2.0');
     expect(dialog).toHaveTextContent('contributeurs OpenStreetMap');
     expect(dialog).toHaveTextContent('Code de la route');

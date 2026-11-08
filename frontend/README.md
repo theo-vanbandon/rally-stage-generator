@@ -8,6 +8,13 @@ Interface React du générateur de spéciales de rallye.
 - Choix de la zone (5–20 km), du revêtement (asphalte / terre / mixte) et de la longueur
 - 3 tracés proposés par génération, cliquables sur la carte
 - Sens inverse en un clic : même tracé à l'envers, avec son propre roadbook, profil et point stop
+- Option **boucle**, deux types :
+  - **carrefour** : on repasse une fois par un même carrefour, entouré sur la carte (badge « 2× ») ;
+  - **portion commune** : un tronçon est parcouru deux fois dans le même sens ; il est surligné en bleu, avec un badge « 2× ».
+  Le roadbook signale chaque passage, et une tuile donne les longueurs de la boucle et de la portion.
+- Grosses flèches de sens de la boucle, dessinées à côté du tracé, côté extérieur :
+  - elles changent de côté ou disparaissent si elles toucheraient un autre morceau de la spéciale ;
+  - elles sont recalculées à chaque zoom.
 - Carte avec fonds **Plan IGN**, **photo aérienne IGN** et OpenStreetMap
 - Statistiques : longueur, sinuosité, lignes droites, dénivelé, pente max, revêtement
 - Profil d'altitude interactif (le survol positionne un repère sur la carte)
@@ -15,7 +22,7 @@ Interface React du générateur de spéciales de rallye.
 - Impression du roadbook en A5 ou A4 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
 - Export **GPX** (avec altitudes et waypoints PK), **KML** (3D) et **GeoJSON**
 - Mentions légales (éditeur, hébergeur, sources des données, avertissement, données personnelles), accessibles depuis le pied de page ou par l'adresse `#mentions-legales`
-- Lien partageable : l'URL contient la zone, les options, la graine, le tracé affiché et le sens, et régénère exactement la même spéciale
+- Lien partageable : l'URL contient la zone, les options (dont `b=1` boucle par un carrefour, `b=2` portion commune), la graine, le tracé affiché et le sens, et régénère exactement la même spéciale
 
 ## 🏗️ Structure
 ```

@@ -24,13 +24,40 @@ const LENGTHS = [
   { value: "long", label: "Longue", hint: "16–25 km" },
 ];
 
+const LOOPS = [
+  { value: "none", label: "Sans" },
+  { value: "junction", label: "Carrefour", hint: "on recroise le tracé" },
+  { value: "shared", label: "Portion", hint: "un tronçon fait 2 fois" },
+];
+
 const SLOW_HINT_MS = 2500;
 const LEGAL_HASH = "#mentions-legales";
 const MAX_SEEN = 60; // tracés déjà vus envoyés au serveur pour ne pas les reproposer
 
 /** Clé des paramètres de génération : les tracés vus ne comptent que pour une même recherche */
-const searchKey = ({ commune, radiusKm, surface, length }) =>
-  commune ? [commune.lat, commune.lon, radiusKm, surface, length].join("|") : "";
+const searchKey = ({ commune, radiusKm, surface, length, loop }) =>
+  commune ? [commune.lat, commune.lon, radiusKm, surface, length, loop].join("|") : "";
+
+// Boucle dans le lien partagé : b=1 carrefour, b=2 portion commune
+const LOOP_URL = { junction: "1", shared: "2" };
+const loopFromUrl = (b) => Object.keys(LOOP_URL).find((k) => LOOP_URL[k] === b) ?? "none";
+
+/** Phrase d'explication de la boucle, sous les tracés proposés */
+function loopNotice(loop) {
+  // Point décimal : une virgule se confondrait avec celles de la phrase
+  const fr = (x, digits) => x.toFixed(digits);
+  if (loop.kind === "shared") {
+    return (
+      `Boucle de ${fr(loop.lengthKm, 1)} km avec une portion commune de ${fr(loop.sharedKm, 1)} km (surlignée en bleu), ` +
+      `parcourue deux fois dans le même sens : du km ${fr(loop.sharedFromKm, 2)}, puis à nouveau après la boucle. ` +
+      "Suivez les flèches pour le sens de parcours."
+    );
+  }
+  return (
+    `Boucle de ${fr(loop.lengthKm, 1)} km à partir du km ${fr(loop.fromKm, 2)} : on passe deux fois au carrefour ` +
+    "entouré sur la carte. Suivez les flèches pour le sens de parcours."
+  );
+}
 
 /** Paramètres partagés via l'URL (?lat=…&lon=…&seed=…) pour retrouver exactement une spéciale */
 function readUrlParams() {
@@ -44,6 +71,7 @@ function readUrlParams() {
     radiusKm: Number.parseInt(q.get("r"), 10) || 10,
     surface: SURFACES.some((s) => s.value === q.get("s")) ? q.get("s") : "asphalt",
     length: LENGTHS.some((l) => l.value === q.get("l")) ? q.get("l") : "medium",
+    loop: loopFromUrl(q.get("b")),
     seed: Number.isInteger(seed) ? seed : undefined,
     avoid: q.get("vu") ? q.get("vu").split(",").filter(Boolean) : [],
     trace: Math.max(0, (Number.parseInt(q.get("t"), 10) || 1) - 1),
@@ -61,7 +89,7 @@ function writeViewParams({ trace, reversed }) {
   window.history.replaceState(null, "", `?${q}`);
 }
 
-function writeUrlParams({ commune, radiusKm, surface, length, seed, avoid }) {
+function writeUrlParams({ commune, radiusKm, surface, length, loop, seed, avoid }) {
   const q = new URLSearchParams({
     name: commune.name,
     cp: commune.postal,
@@ -72,6 +100,7 @@ function writeUrlParams({ commune, radiusKm, surface, length, seed, avoid }) {
     l: length,
     seed: String(seed),
   });
+  if (LOOP_URL[loop]) q.set("b", LOOP_URL[loop]);
   // Tracés exclus lors de cette génération : nécessaires pour la reproduire à l'identique
   if (avoid.length) q.set("vu", avoid.join(","));
   window.history.replaceState(null, "", `?${q}`);
@@ -103,6 +132,7 @@ export default function RouteGenerator() {
   const [radiusKm, setRadiusKm] = useState(initial?.radiusKm ?? 10);
   const [surface, setSurface] = useState(initial?.surface ?? "asphalt");
   const [length, setLength] = useState(initial?.length ?? "medium");
+  const [loop, setLoop] = useState(initial?.loop ?? "none");
 
   const [result, setResult] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -175,22 +205,22 @@ export default function RouteGenerator() {
       setSlow(false);
       const slowTimer = setTimeout(() => setSlow(true), SLOW_HINT_MS);
 
-      const key = searchKey({ commune, radiusKm, surface, length });
+      const key = searchKey({ commune, radiusKm, surface, length, loop });
       const avoid = seenRef.current.key === key ? seenRef.current.ids : [];
 
       try {
         const data = await generateStage(
-          { place: commune.name, postal: commune.postal, lat: commune.lat, lon: commune.lon, radiusKm, surface, length, seed, avoid },
+          { place: commune.name, postal: commune.postal, lat: commune.lat, lon: commune.lon, radiusKm, surface, length, loop: loop === "none" ? false : loop, seed, avoid },
           { signal: controller.signal }
         );
         const shownIds = [data.stage, ...data.alternatives].map((s) => s.id);
         // Zone élargie par le serveur : le curseur suit, et les tracés vus valent pour cette nouvelle zone
-        const usedKey = searchKey({ commune, radiusKm: data.radiusKm, surface, length });
+        const usedKey = searchKey({ commune, radiusKm: data.radiusKm, surface, length, loop });
         const previous = usedKey === key ? avoid : [];
         seenRef.current = { key: usedKey, ids: [...previous.filter((id) => !shownIds.includes(id)), ...shownIds].slice(-MAX_SEEN) };
         if (data.radiusKm !== radiusKm) setRadiusKm(data.radiusKm);
         setResult(data);
-        writeUrlParams({ commune, radiusKm: data.radiusKm, surface, length, seed: data.seed, avoid: previous });
+        writeUrlParams({ commune, radiusKm: data.radiusKm, surface, length, loop, seed: data.seed, avoid: previous });
         const view = pendingView.current ?? { trace: 0, reversed: false };
         pendingView.current = null;
         showView(Math.min(view.trace, data.alternatives.length), view.reversed);
@@ -201,7 +231,7 @@ export default function RouteGenerator() {
         if (abortRef.current === controller) setLoading(false);
       }
     },
-    [commune, radiusKm, surface, length]
+    [commune, radiusKm, surface, length, loop]
   );
 
   // Lien partagé : on régénère la spéciale à l'identique au chargement
@@ -274,6 +304,16 @@ export default function RouteGenerator() {
               <SegmentedControl name="Longueur" options={LENGTHS} value={length} onChange={setLength} />
             </div>
 
+            <div className="field">
+              <span className="field-label">Boucle</span>
+              <SegmentedControl
+                name="Boucle"
+                options={LOOPS}
+                value={loop}
+                onChange={setLoop}
+              />
+            </div>
+
             <button type="submit" className="primary" disabled={loading || !commune}>
               {loading ? "Génération…" : result ? "Nouvelle spéciale" : "Générer la spéciale"}
             </button>
@@ -329,6 +369,12 @@ export default function RouteGenerator() {
 
               {result.relaxed && (
                 <p className="notice">Réseau rural limité ici : la spéciale est plus courte que demandé.</p>
+              )}
+
+              {stage.stats.loop && (
+                <p className="notice loop-notice">
+                  <span aria-hidden="true">↻</span> {loopNotice(stage.stats.loop)}
+                </p>
               )}
 
               {result.exhausted && (

@@ -18,6 +18,23 @@ const SURFACE_MODES = {
   mixed: { pref: { paved: 0.7, gravel: 1, dirt: 0.7 }, unpaved: [0.25, 0.75], relaxedMin: 0.1 },
 };
 
+// Boucle dans la spéciale : longueur de la boucle selon la longueur de la spéciale
+const LOOP_PRESETS = {
+  short: [1.5, 4],
+  medium: [2, 6],
+  long: [3, 8],
+};
+// Boucle avec portion commune : longueur du tronçon parcouru deux fois (dans le même sens)
+const SHARED_PRESETS = {
+  short: [0.3, 1.5],
+  medium: [0.4, 2.5],
+  long: [0.5, 3],
+};
+const LOOP_KINDS = ["junction", "shared"];
+const LOOP_SMOOTH_KM = 0.2;
+const LOOP_MIN_COMPACTNESS = 0.2; // en dessous : boucle trop allongée (deux routes parallèles) ou qui se croise
+const LOOP_ARM_MIN_KM = 1; // au moins 1 km avant et après la boucle
+
 const LENGTH_PRESETS = {
   short: [5, 9],
   medium: [9, 16],
@@ -25,6 +42,9 @@ const LENGTH_PRESETS = {
 };
 
 const WALKS = 6000;
+const LOOP_WALKS = 18000; // une spéciale avec boucle échoue plus souvent : plus d'essais (même budget de temps)
+const LOOP_ENOUGH = 600; // candidats suffisants pour choisir
+const LOOP_KEEP_PER_LOOP = 3; // variantes (bras différents) gardées par boucle : la variété vient des boucles
 const TIME_BUDGET_MS = 4000; // garde-fou ; en pratique < 500 ms
 const FINALISTS = 300;
 const TWIST_REF_DEG_PER_KM = 650; // sinuosité d'une très bonne route de spéciale (médiane du réseau rural ≈ 400)
@@ -255,7 +275,7 @@ function exitPath(network, from, stageNodes) {
  * Une marche aléatoire depuis un tronçon de départ.
  * Elle ne s'arrête qu'une fois la longueur visée atteinte ET sur un carrefour d'où l'on peut repartir.
  */
-function randomWalk(network, prefs, startEdgeId, forward, targetKm, minKm, maxKm, rng) {
+function randomWalk(network, prefs, startEdgeId, forward, targetKm, minKm, maxKm, rng, blocked = null) {
   const { nodes, edges } = network;
   const { pref, usableDegree, reach } = prefs;
 
@@ -268,10 +288,12 @@ function randomWalk(network, prefs, startEdgeId, forward, targetKm, minKm, maxKm
   let heading = exitHeading(first, forward);
   let urbanRunKm = first.urban ? first.lengthKm : 0;
   let urbanKm = urbanRunKm;
+  // `blocked` : carrefours déjà pris par le reste de la spéciale (boucle) — interdits, et comptés pour la sortie
+  const stageNodes = blocked ? { has: (n) => visited.has(n) || blocked.has(n) } : visited;
 
   let finishOk = false;
   for (;;) {
-    if (lengthKm >= targetKm && hasExit(network, node, visited)) {
+    if (lengthKm >= targetKm && hasExit(network, node, stageNodes)) {
       finishOk = true;
       break;
     }
@@ -283,7 +305,7 @@ function randomWalk(network, prefs, startEdgeId, forward, targetKm, minKm, maxKm
       const e = edges[eid];
       const fwd = e.a === node;
       const next = fwd ? e.b : e.a;
-      if (visited.has(next)) continue;
+      if (visited.has(next) || blocked?.has(next)) continue;
       if (lengthKm + e.lengthKm > maxKm) continue;
       if (e.urban && (urbanRunKm + e.lengthKm > URBAN_RUN_MAX_KM || urbanKm + e.lengthKm > URBAN_SHARE_MAX * maxKm)) continue;
 
@@ -311,6 +333,443 @@ function randomWalk(network, prefs, startEdgeId, forward, targetKm, minKm, maxKm
   }
 
   return { steps, lengthKm, startNode, endNode: node, visited, finishOk };
+}
+
+/**
+ * Spéciale avec boucle : on arrive à un carrefour pivot, on fait le tour d'une boucle qui y ramène, puis on
+ * repart par une autre route. Le pivot est le seul endroit où l'on passe deux fois ; aucune route n'est
+ * empruntée deux fois. Pivot = carrefour d'au moins 4 routes (arrivée, départ et retour de boucle, sortie),
+ * ou carrefour décalé (deux nœuds de 3 routes à quelques mètres l'un de l'autre, comme l'IGN les découpe) :
+ * 1er passage par l'un, 2e passage par l'autre.
+ */
+/**
+ * Pivots possibles, mis en cache par revêtement : { first, second, link } — first = second pour un carrefour
+ * de 4 routes et plus ; sinon deux nœuds de 3 routes reliés par le tronçon `link` (jamais emprunté)
+ */
+function loopHubs(network, prefs) {
+  if (prefs.loopHubs) return prefs.loopHubs;
+  const { nodes, edges } = network;
+  const { pref, usableDegree } = prefs;
+  const hubs = [];
+  nodes.forEach((_, n) => {
+    if (usableDegree[n] >= 4) hubs.push({ first: n, second: n, link: null });
+  });
+  for (const e of edges) {
+    if (pref[e.id] <= 0 || e.lengthKm > JUNCTION_CLUSTER_KM || e.a === e.b) continue;
+    if (usableDegree[e.a] !== 3 || usableDegree[e.b] !== 3) continue;
+    hubs.push({ first: e.a, second: e.b, link: e.id }, { first: e.b, second: e.a, link: e.id });
+  }
+  prefs.loopHubs = hubs;
+  return hubs;
+}
+
+/**
+ * Compacité d'une boucle (4π·surface / périmètre²) : 1 pour un cercle, ~0,8 pour un carré, proche de 0 pour
+ * un aller-retour sur deux routes parallèles ou une boucle qui se croise elle-même
+ */
+const loopPolygon = (network, steps) =>
+  steps.flatMap(({ edge, forward }) => {
+    const coords = network.edges[edge].coords;
+    return (forward ? coords : [...coords].reverse()).map((p) => network.projection.toXY(p));
+  });
+
+function loopCompactness(network, steps) {
+  // Mesurée sur le tracé lissé (un point tous les ~200 m) : c'est la forme d'ensemble qui compte, pas les virages
+  const raw = loopPolygon(network, steps);
+  const pts = [raw[0]];
+  let run = 0;
+  for (let i = 1; i < raw.length; i++) {
+    run += Math.hypot(raw[i][0] - raw[i - 1][0], raw[i][1] - raw[i - 1][1]);
+    if (run >= LOOP_SMOOTH_KM) {
+      pts.push(raw[i]);
+      run = 0;
+    }
+  }
+  let area = 0;
+  let perimeter = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    area += x1 * y2 - x2 * y1;
+    perimeter += Math.hypot(x2 - x1, y2 - y1);
+  }
+  return perimeter ? (4 * Math.PI * Math.abs(area / 2)) / perimeter ** 2 : 0;
+}
+
+/** File de priorité minimale (tas binaire) pour Dijkstra */
+class MinHeap {
+  constructor() {
+    this.items = [];
+  }
+  push(key, value) {
+    const a = this.items;
+    a.push([key, value]);
+    let i = a.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (a[p][0] <= a[i][0]) break;
+      [a[p], a[i]] = [a[i], a[p]];
+      i = p;
+    }
+  }
+  pop() {
+    const a = this.items;
+    const top = a[0];
+    const last = a.pop();
+    if (a.length) {
+      a[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < a.length && a[l][0] < a[m][0]) m = l;
+        if (r < a.length && a[r][0] < a[m][0]) m = r;
+        if (m === i) break;
+        [a[m], a[i]] = [a[i], a[m]];
+        i = m;
+      }
+    }
+    return top;
+  }
+  get size() {
+    return this.items.length;
+  }
+}
+
+/**
+ * Une boucle depuis un pivot : aller au hasard (petites routes sinueuses favorisées) depuis `first` par
+ * `openEdge`, puis retour le plus court vers `second` sans recroiser l'aller. Le retour peut rejoindre l'aller
+ * en n'importe quel carrefour : on garde celui qui donne la longueur visée et une boucle bien ronde.
+ * @returns {{steps, lengthKm, nodes, closingEdge}|null}
+ */
+function loopWalk(network, prefs, hub, openEdge, [minKm, maxKm], rng) {
+  const { nodes, edges } = network;
+  const { pref } = prefs;
+  const { first, second, link } = hub;
+  const e0 = edges[openEdge];
+  const fwd0 = e0.a === first;
+  let node = fwd0 ? e0.b : e0.a;
+  if (node === first || node === second) return null;
+
+  // 1. Aller : marche pondérée, sans revenir sur ses pas, jusqu'à ~65 % de la longueur max
+  const out = [{ node: first, km: 0, step: null }, { node, km: e0.lengthKm, step: { edge: openEdge, forward: fwd0 } }];
+  const outIndex = new Map([[first, 0], [node, 1]]);
+  let lengthKm = e0.lengthKm;
+  let heading = exitHeading(e0, fwd0);
+  const outMax = maxKm * 0.65;
+  while (lengthKm < outMax) {
+    const options = [];
+    const weights = [];
+    for (const eid of nodes[node].edges) {
+      if (pref[eid] <= 0) continue;
+      const e = edges[eid];
+      const fwd = e.a === node;
+      const next = fwd ? e.b : e.a;
+      if (outIndex.has(next) || next === second) continue;
+      const turn = Math.abs(signedAngle(heading, entryHeading(e, fwd)));
+      let w = pref[eid] ** 2 * (0.4 + clamp(twistPerKm(e) / TWIST_REF_DEG_PER_KM, 0, 1.6));
+      if (turn > 150) w *= 0.03;
+      else if (turn > 110) w *= 0.35;
+      if (e.urban) w *= 0.3;
+      options.push({ eid, fwd, next });
+      weights.push(w);
+    }
+    if (options.length === 0) break;
+    const c = pickWeighted(options, weights, rng);
+    lengthKm += edges[c.eid].lengthKm;
+    outIndex.set(c.next, out.length);
+    out.push({ node: c.next, km: lengthKm, step: { edge: c.eid, forward: c.fwd } });
+    heading = exitHeading(edges[c.eid], c.fwd);
+    node = c.next;
+  }
+  if (out.length < 3) return null;
+
+  // 2. Retour : Dijkstra depuis `second`, les carrefours de l'aller sont des arrivées possibles (jamais traversés).
+  // Coût un peu bruité pour varier les retours ; les traversées habitées coûtent plus cher.
+  const budget = maxKm - out[1].km;
+  const best = new Map([[second, { cost: 0, km: 0, edge: null, prev: null }]]);
+  const heap = new MinHeap();
+  heap.push(0, second);
+  const joins = [];
+  while (heap.size) {
+    const [cost, n] = heap.pop();
+    const here = best.get(n);
+    if (cost > here.cost) continue;
+    if (outIndex.has(n) && n !== second) {
+      joins.push(n);
+      continue;
+    }
+    for (const eid of nodes[n].edges) {
+      if (pref[eid] <= 0 || eid === link || eid === openEdge) continue;
+      const e = edges[eid];
+      const next = e.a === n ? e.b : e.a;
+      if (next === second || (next === first && first !== second)) continue;
+      const km = here.km + e.lengthKm;
+      if (km > budget) continue;
+      const c = cost + (e.lengthKm * (0.85 + rng() * 0.3) * (e.urban ? 3 : 1)) / pref[eid];
+      const known = best.get(next);
+      if (known && known.cost <= c) continue;
+      best.set(next, { cost: c, km, edge: eid, prev: n });
+      heap.push(c, next);
+    }
+  }
+
+  // 3. Jonction : longueur dans la fourchette, la plus proche de la longueur visée parmi les boucles rondes
+  const targetKm = minKm + rng() * (maxKm - minKm);
+  const options = joins
+    .map((j) => ({ j, km: out[outIndex.get(j)].km + best.get(j).km }))
+    .filter(({ km }) => km >= minKm && km <= maxKm)
+    .sort((a, b) => Math.abs(a.km - targetKm) - Math.abs(b.km - targetKm));
+  for (const { j, km } of options.slice(0, 4)) {
+    const steps = out.slice(1, outIndex.get(j) + 1).map((o) => o.step);
+    const loopNodes = new Set(out.slice(0, outIndex.get(j) + 1).map((o) => o.node));
+    for (let n = j; n !== second; n = best.get(n).prev) {
+      const { edge, prev } = best.get(n);
+      const e = edges[edge];
+      steps.push({ edge, forward: e.a === n });
+      loopNodes.add(prev);
+    }
+    if (loopCompactness(network, steps) < LOOP_MIN_COMPACTNESS) continue;
+    return { steps, lengthKm: km, nodes: loopNodes, closingEdge: steps.at(-1).edge };
+  }
+  return null;
+}
+
+/** Point (x, y) à l'intérieur d'un polygone (parité des croisements) */
+function insidePolygon([x, y], pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i];
+    const [xj, yj] = pts[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Point d'une route à ~30 m du carrefour `from` (ou son autre bout si elle est plus courte) */
+function pointNear(network, edgeId, from, km = 0.03) {
+  const e = network.edges[edgeId];
+  const coords = (e.a === from ? e.coords : [...e.coords].reverse()).map((p) => network.projection.toXY(p));
+  let d = 0;
+  for (let i = 1; i < coords.length; i++) {
+    d += Math.hypot(coords[i][0] - coords[i - 1][0], coords[i][1] - coords[i - 1][1]);
+    if (d >= km) return coords[i];
+  }
+  return coords.at(-1);
+}
+
+/**
+ * Bras coincé (impasse avant la longueur visée) : on le coupe au dernier carrefour d'où l'on peut encore sortir,
+ * s'il reste au moins LOOP_ARM_MIN_KM
+ */
+function truncateArm(network, prefs, walk, blocked) {
+  const { edges } = network;
+  const ends = [walk.startNode];
+  let km = 0;
+  const kms = [0];
+  for (const { edge, forward } of walk.steps) {
+    km += edges[edge].lengthKm;
+    ends.push(forward ? edges[edge].b : edges[edge].a);
+    kms.push(km);
+  }
+  let tried = 0;
+  for (let i = ends.length - 2; i > 0 && kms[i] >= LOOP_ARM_MIN_KM && tried < 6; i--) {
+    if (prefs.usableDegree[ends[i]] < 3) continue;
+    tried++;
+    const visited = new Set(ends.slice(0, i + 1));
+    if (hasExit(network, ends[i], { has: (n) => visited.has(n) || blocked.has(n) })) {
+      return { ...walk, steps: walk.steps.slice(0, i), lengthKm: kms[i], endNode: ends[i], visited, finishOk: true };
+    }
+  }
+  return null;
+}
+
+const reverseSteps = (steps) => [...steps].reverse().map(({ edge, forward }) => ({ edge, forward: !forward }));
+
+const shuffled = (items, rng) => {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+/**
+ * Bras d'entrée (arrivant en `first`) et de sortie (partant de `second`) autour d'une boucle déjà tracée :
+ * ils partent vers l'extérieur, évitent la boucle et l'un l'autre, et totalisent `restKm` environ.
+ * @returns {{armIn, armOut, visited}|null}
+ */
+function buildArms(network, prefs, { first, second, inRoads, outRoads, coreNodes, coreKm, minKm, maxKm, rng }) {
+  const { edges } = network;
+  const restKm = minKm + rng() * (maxKm - minKm) - coreKm;
+  if (restKm < 2 * LOOP_ARM_MIN_KM) return null;
+
+  // Un bras part du pivot vers l'extérieur, en évitant tout ce qui est déjà tracé ; quelques essais
+  const arm = (from, roads, targetKm, maxArmKm, blocked) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      for (const edgeId of roads) {
+        const e = edges[edgeId];
+        const fwd = e.a === from;
+        if (blocked.has(fwd ? e.b : e.a)) continue;
+        const walk = randomWalk(network, prefs, edgeId, fwd, targetKm, LOOP_ARM_MIN_KM, maxArmKm, rng, blocked);
+        if (walk.finishOk && walk.lengthKm >= LOOP_ARM_MIN_KM) return walk;
+        const cut = truncateArm(network, prefs, walk, blocked);
+        if (cut) return cut;
+      }
+    }
+    return null;
+  };
+
+  const share = 0.3 + rng() * 0.4;
+  const armIn = arm(first, inRoads, restKm * share, maxKm - coreKm - LOOP_ARM_MIN_KM, coreNodes);
+  if (!armIn) return null;
+  const blockedOut = new Set([...coreNodes, ...armIn.visited]);
+  const armOut = arm(
+    second,
+    outRoads.filter((id) => id !== armIn.steps[0].edge),
+    Math.max(LOOP_ARM_MIN_KM, restKm - armIn.lengthKm),
+    maxKm - coreKm - armIn.lengthKm,
+    blockedOut
+  );
+  if (!armOut) return null;
+
+  const lengthKm = armIn.lengthKm + coreKm + armOut.lengthKm;
+  if (lengthKm < minKm || lengthKm > maxKm) return null;
+  const visited = new Set([...blockedOut, ...armOut.visited]);
+  // Le bout du bras d'entrée devient le départ : il doit rester accessible une fois toute la spéciale tracée
+  if (!hasExit(network, armIn.endNode, visited)) return null;
+  return { armIn, armOut, visited, lengthKm };
+}
+
+/** Routes d'un carrefour qui partent vers l'extérieur d'une boucle (une route vers l'intérieur y est enfermée) */
+const outwardRoads = (network, node, roads, polygon, rng) =>
+  shuffled(
+    roads.filter((id) => !insidePolygon(pointNear(network, id, node), polygon)),
+    rng
+  );
+
+const edgeKey = (steps) => steps.map((st) => st.edge).sort((a, b) => a - b).join(",");
+
+/**
+ * Boucle par un carrefour : bras d'entrée → pivot → boucle → pivot → bras de sortie
+ * @returns {object|null} marche au même format que randomWalk (+ loopSteps : étapes qui partent du pivot)
+ */
+function loopStageWalk(network, prefs, [minKm, maxKm], loopRange, rng) {
+  const { nodes } = network;
+  const hubs = loopHubs(network, prefs);
+  if (hubs.length === 0) return null;
+  const hub = hubs[Math.floor(rng() * hubs.length)];
+  const { first, second, link } = hub;
+  const roadsAt = (n) => nodes[n].edges.filter((id) => prefs.pref[id] > 0 && id !== link);
+
+  const openEdge = shuffled(roadsAt(first), rng)[0];
+  const loop = loopWalk(network, prefs, hub, openEdge, loopRange, rng);
+  if (!loop) return null;
+  const polygon = loopPolygon(network, loop.steps);
+  const free = (n) => roadsAt(n).filter((id) => id !== openEdge && id !== loop.closingEdge);
+
+  const arms = buildArms(network, prefs, {
+    first,
+    second,
+    inRoads: outwardRoads(network, first, free(first), polygon, rng),
+    outRoads: outwardRoads(network, second, free(second), polygon, rng),
+    coreNodes: loop.nodes,
+    coreKm: loop.lengthKm,
+    minKm,
+    maxKm,
+    rng,
+  });
+  if (!arms) return null;
+  const { armIn, armOut } = arms;
+  const nIn = armIn.steps.length;
+
+  return {
+    steps: [...reverseSteps(armIn.steps), ...loop.steps, ...armOut.steps],
+    lengthKm: arms.lengthKm,
+    startNode: armIn.endNode,
+    endNode: armOut.endNode,
+    visited: arms.visited,
+    finishOk: true,
+    loopKey: edgeKey(loop.steps),
+    // Étapes qui partent du pivot : 1er passage (début de la boucle), 2e passage (début du bras de sortie)
+    loopSteps: { kind: "junction", passes: [nIn, nIn + loop.steps.length] },
+  };
+}
+
+/** Carrefours d'au moins 3 routes : points d'entrée possibles d'une portion commune */
+function sharedHubs(prefs) {
+  prefs.sharedHubs ??= [...prefs.usableDegree.keys()].filter((n) => prefs.usableDegree[n] >= 3);
+  return prefs.sharedHubs;
+}
+
+/**
+ * Boucle avec portion commune : bras d'entrée → A → portion A→B → boucle de B à A → portion A→B à nouveau
+ * (même sens) → bras de sortie depuis B. Deux carrefours en T suffisent. La portion est le seul tronçon
+ * parcouru deux fois, toujours dans le même sens (jamais de face-à-face).
+ * @returns {object|null} marche au même format que randomWalk (+ loopSteps : passages en A, B, A, B)
+ */
+function sharedStageWalk(network, prefs, [minKm, maxKm], [loopMin, loopMax], [sharedMin, sharedMax], rng) {
+  const { nodes, edges } = network;
+  const { pref, usableDegree } = prefs;
+  const hubs = sharedHubs(prefs);
+  if (hubs.length === 0) return null;
+  const A = hubs[Math.floor(rng() * hubs.length)];
+  const roadsAt = (n) => nodes[n].edges.filter((id) => pref[id] > 0);
+
+  // Un circuit fermé passant par A : portion commune (son début) + boucle (le reste)
+  const openEdge = shuffled(roadsAt(A), rng)[0];
+  const circuit = loopWalk(network, prefs, { first: A, second: A, link: null }, openEdge, [loopMin + sharedMin, loopMax + sharedMax], rng);
+  if (!circuit) return null;
+
+  // Fin de la portion : un carrefour B d'au moins 3 routes, portion et boucle de bonnes longueurs
+  const cuts = [];
+  let km = 0;
+  for (let i = 0; i < circuit.steps.length - 1; i++) {
+    const { edge, forward } = circuit.steps[i];
+    km += edges[edge].lengthKm;
+    if (km > sharedMax) break;
+    const B = forward ? edges[edge].b : edges[edge].a;
+    const loopKm = circuit.lengthKm - km;
+    if (km >= sharedMin && usableDegree[B] >= 3 && loopKm >= loopMin && loopKm <= loopMax) cuts.push({ i, B, km });
+  }
+  if (cuts.length === 0) return null;
+  const { i: cut, B, km: sharedKm } = cuts[Math.floor(rng() * cuts.length)];
+  const shared = circuit.steps.slice(0, cut + 1);
+  const loop = circuit.steps.slice(cut + 1);
+
+  const polygon = loopPolygon(network, circuit.steps);
+  const inFree = roadsAt(A).filter((id) => id !== shared[0].edge && id !== circuit.closingEdge);
+  const outFree = roadsAt(B).filter((id) => id !== shared.at(-1).edge && id !== loop[0].edge);
+  const arms = buildArms(network, prefs, {
+    first: A,
+    second: B,
+    inRoads: outwardRoads(network, A, inFree, polygon, rng),
+    outRoads: outwardRoads(network, B, outFree, polygon, rng),
+    coreNodes: circuit.nodes,
+    coreKm: circuit.lengthKm + sharedKm,
+    minKm,
+    maxKm,
+    rng,
+  });
+  if (!arms) return null;
+  const { armIn, armOut } = arms;
+  const nIn = armIn.steps.length;
+  const nS = shared.length;
+  const nL = loop.length;
+
+  return {
+    steps: [...reverseSteps(armIn.steps), ...shared, ...loop, ...shared, ...armOut.steps],
+    lengthKm: arms.lengthKm,
+    startNode: armIn.endNode,
+    endNode: armOut.endNode,
+    visited: arms.visited,
+    finishOk: true,
+    loopKey: `${edgeKey(circuit.steps)}|${nS}`,
+    // Étapes qui partent de A (1er passage), B (début de la boucle), A (2e passage), B (sortie)
+    loopSteps: { kind: "shared", passes: [nIn, nIn + nS, nIn + nS + nL, nIn + 2 * nS + nL] },
+  };
 }
 
 /**
@@ -428,7 +887,10 @@ function applyOverlapPenalty(network, candidates) {
   candidates.sort((a, b) => b.eval.score - a.eval.score);
   const finalists = candidates.slice(0, FINALISTS);
   for (const c of finalists) {
-    c.eval.overlap = selfProximity(network, c.walk.steps);
+    // Portion commune : son 2e passage est voulu, il ne compte pas comme un repassage
+    const { steps, loopSteps } = c.walk;
+    const own = loopSteps?.kind === "shared" ? [...steps.slice(0, loopSteps.passes[2]), ...steps.slice(loopSteps.passes[3])] : steps;
+    c.eval.overlap = selfProximity(network, own);
     c.eval.score -= 1.2 * c.eval.overlap;
   }
   return finalists.sort((a, b) => b.eval.score - a.eval.score);
@@ -464,7 +926,17 @@ function reverseCandidate(candidate) {
   return {
     ...candidate,
     id: stageId(steps),
-    walk: { ...candidate.walk, steps, startNode: candidate.walk.endNode, endNode: candidate.walk.startNode },
+    walk: {
+      ...candidate.walk,
+      steps,
+      startNode: candidate.walk.endNode,
+      endNode: candidate.walk.startNode,
+      // Le nœud de départ de l'étape i devient celui de l'étape n − i : les deux passages au pivot s'échangent
+      loopSteps: candidate.walk.loopSteps && {
+        kind: candidate.walk.loopSteps.kind,
+        passes: candidate.walk.loopSteps.passes.map((p) => steps.length - p).reverse(),
+      },
+    },
   };
 }
 
@@ -802,6 +1274,36 @@ function findStopPoint(network, finishNode, stageNodes) {
  * Roadbook : une case par point utile, comme les roadbooks d'organisateur — CH/départ, chaque carrefour
  * (tulipe), changement de revêtement, arrivée lancée, point stop — avec kilométrages total et partiel.
  */
+const LOOP_NOTES = {
+  junction: ["Boucle : 1er passage — entrée dans la boucle", "Boucle : 2e passage — sortie de la boucle"],
+  shared: [
+    "Boucle : entrée sur la portion commune (1er passage)",
+    "Boucle : fin de la portion commune — départ de la boucle",
+    "Boucle : retour sur la portion commune (2e passage)",
+    "Boucle : fin de la portion commune — sortie de la boucle",
+  ],
+};
+
+/**
+ * Statistiques de la boucle. Carrefour : km du 1er passage au pivot et longueur de la boucle.
+ * Portion commune : en plus, début et longueur de la portion parcourue deux fois (la boucle part de sa fin).
+ */
+function loopStats(loopSteps, kmAt, coordAt) {
+  if (!loopSteps) return null;
+  const [p0, p1, p2] = loopSteps.passes;
+  if (loopSteps.kind === "shared") {
+    return {
+      kind: "shared",
+      sharedFromKm: round2(kmAt(p0)),
+      sharedKm: round2(kmAt(p1) - kmAt(p0)),
+      fromKm: round2(kmAt(p1)),
+      lengthKm: round2(kmAt(p2) - kmAt(p1)),
+      coord: coordAt(p1),
+    };
+  }
+  return { kind: "junction", fromKm: round2(kmAt(p0)), lengthKm: round2(kmAt(p1) - kmAt(p0)), coord: coordAt(p0) };
+}
+
 function describeStage(network, prefs, candidate) {
   const { nodes, edges, projection } = network;
   const { usableDegree } = prefs;
@@ -883,6 +1385,9 @@ function describeStage(network, prefs, candidate) {
   const nodeAtStep = (i) => (steps[i].forward ? edges[steps[i].edge].a : edges[steps[i].edge].b);
   let group = null;
 
+  // Spéciale avec boucle : le générateur indique les étapes qui partent des carrefours de la boucle
+  const { loopSteps } = candidate.walk;
+
   steps.forEach(({ edge }, i) => {
     if (i === 0) return;
     const e = edges[edge];
@@ -947,6 +1452,14 @@ function describeStage(network, prefs, candidate) {
       stageSegs,
     });
     const { notes, danger } = junctionNotes(tulip);
+    let loopDanger = 0;
+    const pass = loopSteps ? loopSteps.passes.findIndex((st) => st >= g.firstStep && st <= g.lastStep) : -1;
+    if (pass >= 0) {
+      notes.push(LOOP_NOTES[loopSteps.kind][pass]);
+      loopDanger = 1; // attention à prendre la bonne route : on est déjà passé ici, ou on y repassera
+    } else if (loopSteps?.kind === "shared" && g.firstStep > loopSteps.passes[2] && g.lastStep < loopSteps.passes[3]) {
+      notes.push("Portion commune : 2e passage");
+    }
     notes.push(...g.surfaceNotes);
     return {
       type: "junction",
@@ -956,7 +1469,7 @@ function describeStage(network, prefs, candidate) {
       angle: tulip.exit,
       road: exitEdge.ref || exitEdge.name || null,
       notes,
-      danger,
+      danger: Math.max(danger, loopDanger),
       tulip,
     };
   }
@@ -1028,6 +1541,7 @@ function describeStage(network, prefs, candidate) {
       longestStraightKm: round2(longestStraightKm),
       junctions: cases.filter((c) => c.type === "junction").length,
       urbanPct: Math.round(candidate.eval.urbanShare * 100),
+      loop: loopStats(loopSteps, (st) => cumKm[stepStart[st]], (st) => nodes[nodeAtStep(st)].coord),
       surfacePct: { paved: share(surfaceKm.paved), gravel: share(surfaceKm.gravel), dirt: share(surfaceKm.dirt) },
       elevation: elevationStats(cumKm, z),
     },
@@ -1042,8 +1556,12 @@ function describeStage(network, prefs, candidate) {
  * @param {"short"|"medium"|"long"} options.length
  * @param {number} options.seed
  * @param {string[]} [options.avoid] - Identifiants des tracés déjà proposés, à ne pas reproposer
+ * @param {false|"junction"|"shared"} [options.loop] - Spéciale avec une boucle : on repasse par un même carrefour
+ *   ("junction") ou on parcourt deux fois une même portion dans le même sens ("shared")
  */
-function generateStages(network, { surface = "asphalt", length = "medium", seed = 1, avoid = [] } = {}) {
+function generateStages(network, { surface = "asphalt", length = "medium", seed = 1, avoid = [], loop: loopOption = false } = {}) {
+  // Boucle : "junction" (on repasse par un carrefour) ou "shared" (portion commune) ; true = "junction"
+  const loop = loopOption === true ? "junction" : LOOP_KINDS.includes(loopOption) ? loopOption : false;
   if (!SURFACE_MODES[surface]) throw new Error(`Revêtement inconnu: ${surface}`);
   if (!LENGTH_PRESETS[length]) throw new Error(`Longueur inconnue: ${length}`);
 
@@ -1054,15 +1572,25 @@ function generateStages(network, { surface = "asphalt", length = "medium", seed 
 
   const run = ([minKm, maxKm], [unpavedMin, unpavedMax]) => {
     const candidates = [];
-    for (let i = 0; i < WALKS && Date.now() < deadline; i++) {
-      const startEdge = sampleStart(rng);
-      let forward = rng() < 0.5;
-      if (prefs.reach[dirIndex(startEdge, forward)] < minKm) forward = !forward;
-      if (prefs.reach[dirIndex(startEdge, forward)] < minKm) continue;
-      const targetKm = minKm + rng() * (maxKm - minKm);
-      const walk = randomWalk(network, prefs, startEdge, forward, targetKm, minKm, maxKm, rng);
-      if (walk.lengthKm < minKm || !walk.finishOk) continue;
-      if (!hasExit(network, walk.startNode, walk.visited)) continue;
+    for (let i = 0; i < (loop ? LOOP_WALKS : WALKS) && Date.now() < deadline; i++) {
+      if (loop && (candidates.length >= LOOP_ENOUGH || (i >= LOOP_WALKS / 3 && candidates.length === 0))) break;
+      let walk;
+      if (loop) {
+        walk =
+          loop === "shared"
+            ? sharedStageWalk(network, prefs, [minKm, maxKm], LOOP_PRESETS[length], SHARED_PRESETS[length], rng)
+            : loopStageWalk(network, prefs, [minKm, maxKm], LOOP_PRESETS[length], rng);
+        if (!walk) continue;
+      } else {
+        const startEdge = sampleStart(rng);
+        let forward = rng() < 0.5;
+        if (prefs.reach[dirIndex(startEdge, forward)] < minKm) forward = !forward;
+        if (prefs.reach[dirIndex(startEdge, forward)] < minKm) continue;
+        const targetKm = minKm + rng() * (maxKm - minKm);
+        walk = randomWalk(network, prefs, startEdge, forward, targetKm, minKm, maxKm, rng);
+        if (walk.lengthKm < minKm || !walk.finishOk) continue;
+        if (!hasExit(network, walk.startNode, walk.visited)) continue;
+      }
       const evaluation = evaluate(network, prefs, walk, [minKm, maxKm]);
       if (evaluation.urbanShare > URBAN_SHARE_MAX) continue;
       if (evaluation.unpavedShare < unpavedMin || evaluation.unpavedShare > unpavedMax) continue;
@@ -1096,6 +1624,18 @@ function generateStages(network, { surface = "asphalt", length = "medium", seed 
   }
   const candidatesCount = candidates.length;
 
+  if (loop) {
+    // Chaque boucle est retrouvée de nombreuses fois avec des bras différents : on n'en garde que les meilleures
+    // variantes, sinon les finalistes tournent tous autour de la même boucle
+    const perLoop = new Map();
+    candidates = candidates
+      .sort((a, b) => b.eval.score - a.eval.score)
+      .filter(({ walk }) => {
+        const n = (perLoop.get(walk.loopKey) ?? 0) + 1;
+        perLoop.set(walk.loopKey, n);
+        return n <= LOOP_KEEP_PER_LOOP;
+      });
+  }
   candidates = applyOverlapPenalty(network, candidates);
   for (const c of candidates) {
     c.id = stageId(c.walk.steps);
@@ -1205,6 +1745,17 @@ function selectStages(candidates, avoided, edges, rng) {
 
 module.exports = {
   generateStages,
+  loopStageWalk,
+  sharedStageWalk,
+  SHARED_PRESETS,
+  loopWalk,
+  loopHubs,
+  truncateArm,
+  insidePolygon,
+  pointNear,
+  loopPolygon,
+  loopCompactness,
+  LOOP_PRESETS,
   hasExit,
   exitPath,
   buildTulip,

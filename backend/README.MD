@@ -16,6 +16,17 @@ API REST qui génère des spéciales de rallye sur les petites routes hors agglo
    - observations : route empruntée, **dangers** (`!` épingle, prise ou croisement d'une route principale, `!!` épingle très serrée), **changements de revêtement** (« Début terre », « Retour asphalte ») ;
    - **arrivée lancée**, puis **point stop** 300 m à 1 km plus loin sur la route de sortie.
    Les notes de virages ne sont pas générées : en rallye, c'est l'équipage qui les prend en reconnaissance.
+9. **Boucle** (option `loop`), deux types :
+   - `"junction"`, **par un carrefour** : la spéciale arrive à un carrefour pivot, fait le tour d'une boucle qui y ramène, puis repart par une autre route. On passe deux fois au pivot, jamais deux fois sur la même route. Le pivot est un carrefour d'au moins 4 routes, ou un carrefour décalé (deux nœuds IGN de 3 routes reliés par un tronçon de moins de 25 m : 1er passage par l'un, 2e par l'autre).
+   - `"shared"`, **avec portion commune** : bras d'entrée → A → portion A→B → boucle de B jusqu'à A → même portion A→B → bras de sortie depuis B. La portion (0,3–1,5 km en courte, 0,4–2,5 km en moyenne, 0,5–3 km en longue) est le seul tronçon parcouru deux fois, toujours dans le même sens : jamais de face-à-face. Deux carrefours en T suffisent, d'où beaucoup plus de possibilités qu'avec un carrefour en croix. Au roadbook, A et B apparaissent deux fois (entrée sur la portion, départ de la boucle, retour sur la portion, sortie), et les carrefours intermédiaires de la portion portent « 2e passage » au second passage.
+
+   Pour les deux types :
+   - La boucle mesure 1,5–4 km (courte), 2–6 km (moyenne) ou 3–8 km (longue). Elle est construite par un aller pondéré (petites routes sinueuses) puis un retour au plus court vers le pivot, sans recroiser l'aller.
+   - Une boucle trop allongée (deux routes parallèles) est rejetée : sa compacité (4π·surface/périmètre², mesurée sur le tracé lissé) doit dépasser 0,2.
+   - Il y a au moins 1 km avant et après la boucle. Les bras d'entrée et de sortie partent vers l'extérieur de la boucle et ne la recoupent jamais.
+   - Au roadbook, un carrefour de boucle porte le danger `!`. En mode carrefour, le pivot apparaît deux fois (« 1er passage — entrée dans la boucle », « 2e passage — sortie de la boucle »).
+   - Le générateur transmet au roadbook les étapes exactes des passages (`loopSteps`), y compris en sens inverse : aucune détection après coup.
+   - Si la zone n'offre aucune boucle (massif sans carrefour de 4 routes, par exemple), la zone est élargie, puis la réponse est une 404 explicite.
 
 La **graine** (`seed`) rend la génération reproductible : même zone + mêmes options + même graine = même spéciale.
 
@@ -76,6 +87,8 @@ Les tests n'appellent aucun service externe (axios mocké, réseaux routiers syn
 ```bash
 npm run validate                  # 33 communes de profils variés (≈ 6 min, internet requis)
 npm run validate -- Gap Mende     # seulement certaines communes
+npm run validate -- --boucle      # boucle par un carrefour (pivot unique, longueur de boucle, 2 cases au roadbook)
+npm run validate -- --boucle=portion  # boucle avec portion commune (même sens, pas de face-à-face, 4 cases)
 ```
 
 Le script [scripts/validate-france.js](scripts/validate-france.js) génère des spéciales (3 revêtements × 3 longueurs × 2 graines) autour de communes de montagne, de plaine, de terres de rallye, du littoral, d'outre-mer et de grandes villes, et vérifie sur chaque tracé : longueur, carrefour jamais repris, départ accessible et arrivée ouverte, part habitée, part de terre, alternatives sans chevauchement, cohérence du roadbook, non-répétition et temps de génération. Les tulipes y sont aussi contrôlées (formes dans le cadre, arrivée par le bas, flèche du côté annoncé). Code de sortie non nul au moindre écart : à relancer après chaque modification du générateur.
@@ -97,7 +110,8 @@ Les carrefours types (croix, T, fourches ouvertes et fermées, virage arrondi, a
   "surface": "asphalt",
   "length": "medium",
   "seed": 42,
-  "avoid": ["1vk3h2k", "15esog"]
+  "avoid": ["1vk3h2k", "15esog"],
+  "loop": false
 }
 ```
 
@@ -108,6 +122,7 @@ Les carrefours types (croix, T, fourches ouvertes et fermées, virage arrondi, a
 | `length` | `short` (5–9 km), `medium` (9–16 km), `long` (16–25 km) | `medium` |
 | `seed` | entier | aléatoire |
 | `avoid` | identifiants de tracés déjà vus (60 max) | `[]` |
+| `loop` | `"junction"` (boucle par un carrefour, `true` accepté), `"shared"` (portion commune) | `false` |
 
 **Réponse**
 ```json
@@ -142,6 +157,7 @@ Les carrefours types (croix, T, fourches ouvertes et fermées, virage arrondi, a
       "longestStraightKm": 0.22,
       "junctions": 30,
       "urbanPct": 0,
+      "loop": null,
       "surfacePct": { "paved": 100, "gravel": 0, "dirt": 0 },
       "elevation": { "min": 848, "max": 1096, "gain": 348, "loss": 388, "maxSlopePct": 11.4, "profile": [[0, 980], "..."] }
     }
@@ -157,6 +173,9 @@ Chaque spéciale (principale et alternatives) contient `reverse` : le même trac
 `surfaceRelaxed: true` signifie que la zone n'a pas assez de pistes reliées : la part de terre exigée a été abaissée (35 % en terre, 10 % en mixte).
 `stage.surfaces` découpe le tracé en portions de revêtement homogène (indices dans `geometry.coordinates`).
 `exhausted: true` signifie que la zone ne contient plus de tracé vraiment différent de ceux listés dans `avoid`.
+`stats.loop` vaut `null` sans boucle. Sinon :
+- carrefour : `{ "kind": "junction", "fromKm": 2.85, "lengthKm": 3.32, "coord": [2.8, 50.6] }`, soit le kilomètre du 1er passage au pivot, la longueur de la boucle et la position du pivot ;
+- portion commune : `{ "kind": "shared", "sharedFromKm": 2.1, "sharedKm": 0.82, "fromKm": 2.92, "lengthKm": 3.4, "coord": [...] }`. La portion débute au km `sharedFromKm`, la boucle part de sa fin (B, au km `fromKm`), et la portion est reparcourue à partir de `fromKm + lengthKm`.
 
 Si le rayon demandé ne permet aucune spéciale (vallée urbanisée, massif fermé à la circulation…), le serveur réessaie à +5 puis +10 km (20 km max) ; la réponse indique alors `radiusKm` (rayon utilisé) et `expandedFrom` (rayon demandé).
 

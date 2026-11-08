@@ -5,6 +5,8 @@
  * Usage :
  *   npm run validate                 # toutes les communes
  *   npm run validate -- Gap Mende    # seulement certaines communes
+ *   npm run validate -- --boucle     # spéciales avec boucle par un carrefour
+ *   npm run validate -- --boucle=portion  # spéciales avec boucle et portion commune
  *
  * Nécessite internet (IGN + geo.api.gouv.fr). Les réseaux téléchargés sont mis en cache disque,
  * partagé avec le serveur.
@@ -12,7 +14,7 @@
 const { geocode } = require("../services/geocoder");
 const { fetchRoads } = require("../services/bdtopo");
 const { buildNetwork } = require("../services/roadNetwork");
-const { generateStages, hasExit, LENGTH_PRESETS } = require("../services/stageGenerator");
+const { generateStages, hasExit, LENGTH_PRESETS, LOOP_PRESETS, SHARED_PRESETS } = require("../services/stageGenerator");
 const { TtlCache, DEFAULT_DISK_DIR } = require("../services/cache");
 const { haversineKm } = require("../utils/geometry");
 const { searchRadii } = require("../routes/generate");
@@ -56,7 +58,8 @@ const COMMUNES = [
 
 const SURFACES = ["asphalt", "gravel", "mixed"];
 const LENGTHS = ["short", "medium", "long"];
-const MAX_GENERATE_MS = 2000;
+const LOOP = process.argv.includes("--boucle") ? "junction" : process.argv.includes("--boucle=portion") ? "shared" : false;
+const MAX_GENERATE_MS = LOOP ? 4500 : 2000; // une boucle demande plus d'essais
 
 const roadsCache = new TtlCache({
   maxEntries: 0,
@@ -71,6 +74,16 @@ const segmentKeys = (stage) => {
   const c = stage.geometry.coordinates.map(key);
   return new Set(c.slice(1).map((k, i) => [c[i], k].sort().join("|")));
 };
+
+const loopPasses = (roadbook) =>
+  roadbook.flatMap((c) => (c.notes || []).filter((n) => n.startsWith("Boucle")).map((n) => ({ n, km: c.km })));
+
+function checkLoopLength(stats, length, fail) {
+  const [loopMin, loopMax] = LOOP_PRESETS[length];
+  if (stats.loop.lengthKm < loopMin - 0.05 || stats.loop.lengthKm > loopMax + 0.05) {
+    fail(`boucle de ${stats.loop.lengthKm} km hors [${loopMin}, ${loopMax}]`);
+  }
+}
 
 /**
  * Vérifie toutes les règles sur une spéciale ; retourne la liste des écarts
@@ -87,9 +100,61 @@ function checkStage(stage, { network, nodeByCoord, surface, length, result }) {
     fail(`longueur ${stats.lengthKm} km hors [${floor}, ${maxKm}]`);
   }
 
-  // Jamais deux fois le même carrefour
+  // Jamais deux fois le même carrefour… sauf le pivot d'une boucle, exactement deux fois
   const junctionCoords = stage.geometry.coordinates.map(key).filter((k) => nodeByCoord.has(k));
-  if (new Set(junctionCoords).size !== junctionCoords.length) fail("repasse par un même carrefour");
+  const repeats = junctionCoords.filter((k, i) => junctionCoords.indexOf(k) !== i);
+  if (!LOOP && repeats.length) fail("repasse par un même carrefour");
+  if (LOOP === "junction") {
+    if (!stats.loop) fail("pas de boucle");
+    else {
+      // Pivot = même carrefour, ou carrefour décalé (2e passage sur un nœud voisin, aucun nœud répété)
+      if (repeats.length > 1 || (repeats.length === 1 && repeats[0] !== key(stats.loop.coord))) {
+        fail(`repasse par ${repeats.length} carrefour(s) hors pivot de boucle`);
+      }
+      checkLoopLength(stats, length, fail);
+      if (stats.loop.fromKm < 0.95 || stats.lengthKm - stats.loop.fromKm - stats.loop.lengthKm < 0.95) {
+        fail("moins de 1 km avant ou après la boucle");
+      }
+      const passes = loopPasses(roadbook);
+      if (passes.length !== 2 || !/1er passage/.test(passes[0].n) || !/2e passage/.test(passes[1]?.n)) {
+        fail(`roadbook : ${passes.length} case(s) de boucle au lieu de 2 (1er puis 2e passage)`);
+      } else if (Math.abs(passes[1].km - passes[0].km - stats.loop.lengthKm) > 0.06) {
+        fail("roadbook : écart entre les deux passages différent de la longueur de la boucle");
+      }
+    }
+    // Aucune portion de route parcourue deux fois
+    const c = stage.geometry.coordinates.map(key);
+    if (segmentKeys(stage).size !== c.length - 1 - c.slice(1).filter((k, i) => k === c[i]).length) {
+      fail("emprunte deux fois une même portion de route");
+    }
+  }
+  if (LOOP === "shared") {
+    if (stats.loop?.kind !== "shared") fail("pas de boucle avec portion commune");
+    else {
+      checkLoopLength(stats, length, fail);
+      const [sharedMin, sharedMax] = SHARED_PRESETS[length];
+      if (stats.loop.sharedKm < sharedMin - 0.05 || stats.loop.sharedKm > sharedMax + 0.05) {
+        fail(`portion commune de ${stats.loop.sharedKm} km hors [${sharedMin}, ${sharedMax}]`);
+      }
+      const end = stats.loop.fromKm + stats.loop.lengthKm + stats.loop.sharedKm;
+      if (stats.loop.sharedFromKm < 0.95 || stats.lengthKm - end < 0.95) fail("moins de 1 km avant ou après la boucle");
+      // Portion parcourue deux fois dans le même sens, jamais de face-à-face, rien d'autre de repris
+      const c = stage.geometry.coordinates.map(key);
+      const counts = new Map();
+      c.slice(1).forEach((k, i) => k !== c[i] && counts.set(`${c[i]}>${k}`, (counts.get(`${c[i]}>${k}`) ?? 0) + 1));
+      if ([...counts.keys()].some((p) => counts.has(p.split(">").reverse().join(">")))) fail("face-à-face : portion parcourue dans les deux sens");
+      if ([...counts.values()].some((n) => n > 2)) fail("portion parcourue plus de deux fois");
+      const doubledKm = [...counts.entries()]
+        .filter(([, n]) => n === 2)
+        .reduce((sum, [p]) => sum + haversineKm(...p.split(">").map((k) => k.split(",").map(Number))), 0);
+      if (Math.abs(doubledKm - stats.loop.sharedKm) > 0.06) fail(`${doubledKm.toFixed(2)} km repris deux fois au lieu de la portion (${stats.loop.sharedKm} km)`);
+      const passes = loopPasses(roadbook);
+      const expected = [/entrée sur la portion/, /départ de la boucle/, /retour sur la portion/, /sortie de la boucle/];
+      if (passes.length !== 4 || !expected.every((re, i) => re.test(passes[i].n))) {
+        fail(`roadbook : ${passes.length} case(s) de boucle au lieu de 4 (A, B, A, B)`);
+      }
+    }
+  }
 
   // Accès au départ et sortie de l'arrivée sans emprunter la spéciale
   const stageNodes = new Set(junctionCoords.map((k) => nodeByCoord.get(k)));
@@ -249,7 +314,7 @@ async function validateCommune([name, postal, radiusKm, profile], index) {
           if (zone.error === "zone trop dense") break;
           if (zone.error) continue;
           const t = Date.now();
-          result = generateStages(zone.network, { surface, length, seed });
+          result = generateStages(zone.network, { surface, length, seed, loop: LOOP });
           genMs = Date.now() - t;
           if (result.stages.length) {
             if (r !== radiusKm) report.expanded++;
@@ -281,7 +346,7 @@ async function validateCommune([name, postal, radiusKm, profile], index) {
         // Pas de répétition : une nouvelle génération qui évite les tracés vus doit proposer autre chose
         if (run === 1) {
           const seen = result.stages.map((s) => s.id);
-          const next = generateStages(network, { surface, length, seed: seed + 7, avoid: seen });
+          const next = generateStages(network, { surface, length, seed: seed + 7, avoid: seen, loop: LOOP });
           if (next.stages.length && !next.exhausted && seen.includes(next.stages[0].id)) problems.push("tracé déjà vu reproposé");
         }
 
@@ -304,7 +369,7 @@ const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN);
 const range = (a) => (a.length ? `${Math.min(...a)}–${Math.max(...a)}` : "—");
 
 async function main() {
-  const filter = process.argv.slice(2).map((s) => s.toLowerCase());
+  const filter = process.argv.slice(2).filter((s) => !s.startsWith("--")).map((s) => s.toLowerCase());
   const communes = COMMUNES.filter(([name]) => !filter.length || filter.includes(name.toLowerCase()));
   const reports = [];
 

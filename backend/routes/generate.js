@@ -72,6 +72,8 @@ function parseRequest(body = {}) {
     length,
     seed,
     avoid,
+    // true (anciens liens) = boucle par un carrefour
+    loop: body.loop === true || body.loop === "junction" ? "junction" : body.loop === "shared" ? "shared" : false,
   };
 }
 
@@ -168,6 +170,14 @@ router.post("/", async (req, res) => {
     }
     timings.totalMs = Date.now() - started;
 
+    if (result.stages.length === 0 && params.loop) {
+      throw new HttpError(
+        404,
+        `Aucune spéciale avec boucle possible dans ${analysedKm} km : il faut un carrefour où se croisent quatre ` +
+          "routes et un tour de quelques kilomètres hors des bourgs. Essaie sans boucle, une autre longueur ou " +
+          "une autre commune."
+      );
+    }
     if (result.stages.length === 0) {
       throw new HttpError(
         404,
@@ -189,6 +199,7 @@ router.post("/", async (req, res) => {
       expandedFrom: radiusKm === params.radiusKm ? null : params.radiusKm,
       surface: params.surface,
       length: params.length,
+      loop: params.loop,
       seed: params.seed,
       relaxed: result.relaxed,
       surfaceRelaxed: result.surfaceRelaxed,
