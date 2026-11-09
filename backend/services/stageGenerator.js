@@ -52,6 +52,10 @@ const TWIST_REF_DEG_PER_KM = 650; // sinuosité d'une très bonne route de spéc
 const OVERLAP_TIERS = [0.3, 0.5, 0.7, 0.9];
 const SHOWN_MEMORY = 500; // tracés déjà proposés mémorisés par zone
 const SHORTLIST = 6;
+// Écart minimal entre deux spéciales proposées (elles doivent pouvoir se courir le même jour, accès des secours) :
+// 500 m si possible, 250 m sur une petite zone, jamais moins (on propose alors moins de tracés)
+const STAGE_GAP_TIERS_KM = [0.5, 0.25];
+const GAP_SAMPLE_KM = 0.05;
 const ALTERNATIVES = 2;
 const SPUR_KM = 1.5; // impasse plus courte = accès privé, jamais emprunté
 // Hameaux et routes bordées de maisons (les centres-bourgs sont déjà exclus du graphe) :
@@ -1642,7 +1646,7 @@ function generateStages(network, { surface = "asphalt", length = "medium", seed 
     c.edgeSet = new Set(c.walk.steps.map((s) => s.edge));
   }
 
-  const { chosen, exhausted } = selectStages(candidates, resolveAvoided(network, candidates, avoid), network.edges, rng);
+  const { chosen, exhausted } = selectStages(network, candidates, resolveAvoided(network, candidates, avoid), rng);
   rememberShown(network, chosen);
 
   return {
@@ -1702,14 +1706,84 @@ const sharesEdge = (a, b) => {
 };
 
 /**
+ * Emprise d'un tracé : ses carrefours, et des points tous les ~50 m (coordonnées planes, km) rangés dans une
+ * grille pour mesurer vite la distance à un autre tracé
+ */
+function footprint(network, c) {
+  if (c.footprint) return c.footprint;
+  const { edges, projection } = network;
+  const nodes = new Set();
+  const pts = [];
+  for (const { edge } of c.walk.steps) {
+    const e = edges[edge];
+    nodes.add(e.a);
+    nodes.add(e.b);
+    const xy = e.coords.map((p) => projection.toXY(p));
+    pts.push(xy[0]);
+    for (let i = 1; i < xy.length; i++) {
+      const [a, b] = [xy[i - 1], xy[i]];
+      const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / GAP_SAMPLE_KM);
+      for (let k = 1; k <= n; k++) pts.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+    }
+  }
+  c.footprint = { nodes, pts, grids: new Map() };
+  return c.footprint;
+}
+
+/** Deux tracés à moins de `gapKm` l'un de l'autre ? */
+function tooClose(fa, fb, gapKm) {
+  if (!fb.grids.has(gapKm)) {
+    const grid = new Map();
+    for (const p of fb.pts) {
+      const k = `${Math.floor(p[0] / gapKm)},${Math.floor(p[1] / gapKm)}`;
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(p);
+    }
+    fb.grids.set(gapKm, grid);
+  }
+  const grid = fb.grids.get(gapKm);
+  for (const [x, y] of fa.pts) {
+    const gx = Math.floor(x / gapKm);
+    const gy = Math.floor(y / gapKm);
+    for (let i = gx - 1; i <= gx + 1; i++) {
+      for (let j = gy - 1; j <= gy + 1; j++) {
+        for (const q of grid.get(`${i},${j}`) ?? []) if (Math.hypot(q[0] - x, q[1] - y) < gapKm) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Une alternative peut-elle rejoindre les tracés déjà retenus ? Les spéciales d'un même rallye sont fermées en même
+ * temps : aucun carrefour en commun, assez d'écart, et chaque départ reste accessible, chaque arrivée garde une
+ * sortie, sans emprunter AUCUNE des spéciales.
+ */
+function compatibleStage(network, c, chosen, gapKm) {
+  const fc = footprint(network, c);
+  for (const o of chosen) {
+    const fo = footprint(network, o);
+    for (const n of fc.nodes) if (fo.nodes.has(n)) return false;
+    if (tooClose(fc, fo, gapKm)) return false;
+  }
+  const closed = new Set(fc.nodes);
+  for (const o of chosen) for (const n of footprint(network, o).nodes) closed.add(n);
+  return [c, ...chosen].every(
+    (s) => hasExit(network, s.walk.startNode, closed) && hasExit(network, s.walk.endNode, closed)
+  );
+}
+
+/**
  * Choisit la spéciale principale et ses alternatives.
  *
  * - Nouveauté : on écarte les tracés qui recouvrent ceux déjà proposés. Sur une petite zone, la tolérance
  *   est relâchée par paliers pour proposer des variantes plutôt que toujours le même tracé.
- * - Lisibilité : les alternatives ne partagent aucun tronçon avec la principale ni entre elles. S'il n'y en a
- *   pas assez de totalement séparées, on en propose moins.
+ * - Réalisables ensemble : les alternatives ne touchent ni la principale ni entre elles (aucun tronçon ni
+ *   carrefour commun, 500 m d'écart, 250 m sur une petite zone) et aucune ne bloque l'accès au départ ou la
+ *   sortie de l'arrivée d'une autre. S'il n'y en a pas assez, on en propose moins.
  */
-function selectStages(candidates, avoided, edges, rng) {
+function selectStages(network, candidates, avoided, rng) {
+  const { edges } = network;
   let pool = null;
   let tier = OVERLAP_TIERS[0];
   for (const maxOverlap of OVERLAP_TIERS) {
@@ -1736,15 +1810,21 @@ function selectStages(candidates, avoided, edges, rng) {
   const main = pickWeighted(shortlist, shortlist.map((_, i) => 1 / (i + 1)), rng);
 
   const chosen = [main];
-  for (const c of pool) {
+  for (const gapKm of STAGE_GAP_TIERS_KM) {
+    for (const c of pool) {
+      if (chosen.length > ALTERNATIVES) break;
+      if (chosen.includes(c) || chosen.some((o) => sharesEdge(c, o))) continue;
+      if (compatibleStage(network, c, chosen, gapKm)) chosen.push(c);
+    }
     if (chosen.length > ALTERNATIVES) break;
-    if (chosen.every((o) => o !== c && !sharesEdge(c, o))) chosen.push(c);
   }
   return { chosen, exhausted };
 }
 
 module.exports = {
   generateStages,
+  compatibleStage,
+  STAGE_GAP_TIERS_KM,
   loopStageWalk,
   sharedStageWalk,
   SHARED_PRESETS,

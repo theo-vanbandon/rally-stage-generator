@@ -6,6 +6,7 @@ const {
   turnLabel,
   elevationStats,
   LENGTH_PRESETS,
+  compatibleStage,
 } = require('../../services/stageGenerator');
 const { buildNetwork } = require('../../services/roadNetwork');
 const { gridSegments, segment, wiggly, CENTER } = require('../fixtures/network');
@@ -196,6 +197,62 @@ describe('Stage Generator Service', () => {
     test('devrait rejeter des options inconnues', () => {
       expect(() => generateStages(network, { surface: 'neige' })).toThrow();
       expect(() => generateStages(network, { length: 'marathon' })).toThrow();
+    });
+  });
+
+  describe('spéciales réalisables le même jour', () => {
+    test("ni croisement, ni accès bloqué, 250 m d'écart minimum entre les 3 propositions", () => {
+      const { haversineKm } = require('../../utils/geometry');
+      const keys = new Map(network.nodes.map((n, i) => [coordKey(n.coord), i]));
+      for (let seed = 1; seed <= 5; seed++) {
+        const { stages } = generateStages(network, { seed });
+        const nodeSets = stages.map(
+          (s) => new Set(s.geometry.coordinates.map(coordKey).filter((k) => keys.has(k)).map((k) => keys.get(k)))
+        );
+        const closed = new Set(nodeSets.flatMap((set) => [...set]));
+        for (let i = 0; i < stages.length; i++) {
+          // Départ et arrivée accessibles alors que TOUTES les spéciales sont fermées
+          expect(hasExit(network, keys.get(coordKey(stages[i].start)), closed)).toBe(true);
+          expect(hasExit(network, keys.get(coordKey(stages[i].finish)), closed)).toBe(true);
+          for (let j = i + 1; j < stages.length; j++) {
+            expect([...nodeSets[i]].some((n) => nodeSets[j].has(n))).toBe(false);
+            const min = Math.min(
+              ...stages[i].geometry.coordinates.flatMap((a) => stages[j].geometry.coordinates.map((b) => haversineKm(a, b)))
+            );
+            expect(min).toBeGreaterThanOrEqual(0.25);
+          }
+        }
+      }
+    });
+
+    // Tracés construits à la main sur la grille 7 × 7 (carrefours tous les 0,01°)
+    const nodeAt = (i, j) =>
+      network.nodes.findIndex((n) => coordKey(n.coord) === coordKey([CENTER.lon + i * 0.01, CENTER.lat + j * 0.01]));
+    const path = (pts) => {
+      const ids = pts.map(([i, j]) => nodeAt(i, j));
+      const steps = ids.slice(1).map((v, k) => {
+        const id = network.nodes[ids[k]].edges.find((eid) => {
+          const e = network.edges[eid];
+          return (e.a === ids[k] && e.b === v) || (e.b === ids[k] && e.a === v);
+        });
+        return { edge: id, forward: network.edges[id].a === ids[k] };
+      });
+      return { walk: { steps, startNode: ids[0], endNode: ids.at(-1) } };
+    };
+    const row = () => path([[1, 3], [2, 3], [3, 3], [4, 3]]);
+
+    test('refuse deux spéciales qui se croisent à un carrefour', () => {
+      expect(compatibleStage(network, path([[2, 1], [2, 2], [2, 3], [2, 4], [2, 5]]), [row()], 0.25)).toBe(false);
+    });
+
+    test('refuse deux spéciales trop proches, accepte un écart suffisant', () => {
+      // Ligne parallèle à ~1,1 km au nord (les routes ondulent de ±150 m)
+      expect(compatibleStage(network, path([[1, 4], [2, 4], [3, 4], [4, 4]]), [row()], 0.25)).toBe(true);
+      expect(compatibleStage(network, path([[1, 4], [2, 4], [3, 4], [4, 4]]), [row()], 2)).toBe(false);
+    });
+
+    test("refuse une spéciale qui part de l'arrivée d'une autre", () => {
+      expect(compatibleStage(network, path([[4, 3], [5, 3], [6, 3]]), [row()], 0.25)).toBe(false);
     });
   });
 

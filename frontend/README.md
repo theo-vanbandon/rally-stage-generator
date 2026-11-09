@@ -6,7 +6,7 @@ Interface React du générateur de spéciales de rallye.
 
 - Recherche de commune avec autocomplétion (nom ou code postal, via geo.api.gouv.fr)
 - Choix de la zone (5–20 km), du revêtement (asphalte / terre / mixte) et de la longueur
-- 3 tracés proposés par génération, cliquables sur la carte
+- 3 tracés proposés par génération, cliquables sur la carte. Ils sont réalisables le même jour : ils ne se croisent pas, sont écartés d'au moins 500 m (250 m sur une petite zone) et aucun ne bloque l'accès au départ ou à l'arrivée d'un autre
 - Sens inverse en un clic : même tracé à l'envers, avec son propre roadbook, profil et point stop
 - Option **boucle**, deux types :
   - **carrefour** : on repasse une fois par un même carrefour, entouré sur la carte (badge « 2× ») ;

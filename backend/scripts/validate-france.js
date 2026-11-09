@@ -240,14 +240,49 @@ function checkTulip(c) {
   return problems;
 }
 
-function checkAlternatives(stages) {
+/** Points tous les ~50 m le long d'un tracé, en km (plan local) */
+function sampleKm(coords) {
+  const k = 111.32 * Math.cos((coords[0][1] * Math.PI) / 180);
+  const xy = coords.map(([lon, lat]) => [lon * k, lat * 111.32]);
+  const out = [xy[0]];
+  for (let i = 1; i < xy.length; i++) {
+    const n = Math.ceil(Math.hypot(xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]) / 0.05);
+    for (let j = 1; j <= n; j++) out.push([xy[i - 1][0] + ((xy[i][0] - xy[i - 1][0]) * j) / n, xy[i - 1][1] + ((xy[i][1] - xy[i - 1][1]) * j) / n]);
+  }
+  return out;
+}
+
+function minGapKm(a, b) {
+  let best = Infinity;
+  for (const p of a) for (const q of b) best = Math.min(best, Math.hypot(p[0] - q[0], p[1] - q[1]));
+  return best;
+}
+
+/**
+ * Les spéciales proposées doivent pouvoir se courir le même jour : aucun tronçon ni carrefour commun,
+ * au moins 250 m d'écart, et chaque départ / arrivée accessible avec TOUTES les spéciales fermées
+ */
+function checkAlternatives(stages, { network, nodeByCoord }) {
+  const problems = [];
   const keys = stages.map(segmentKeys);
+  const nodeSets = stages.map((s) => new Set(s.geometry.coordinates.map(key).filter((k) => nodeByCoord.has(k))));
+  const samples = stages.map((s) => sampleKm(s.geometry.coordinates));
   for (let i = 0; i < keys.length; i++) {
     for (let j = i + 1; j < keys.length; j++) {
-      if ([...keys[i]].some((k) => keys[j].has(k))) return [`tracés ${i + 1} et ${j + 1} se chevauchent`];
+      if ([...keys[i]].some((k) => keys[j].has(k))) problems.push(`tracés ${i + 1} et ${j + 1} se chevauchent`);
+      else if ([...nodeSets[i]].some((k) => nodeSets[j].has(k))) problems.push(`tracés ${i + 1} et ${j + 1} se croisent`);
+      else {
+        const gap = minGapKm(samples[i], samples[j]);
+        if (gap < 0.245) problems.push(`tracés ${i + 1} et ${j + 1} à ${Math.round(gap * 1000)} m l'un de l'autre`);
+      }
     }
   }
-  return [];
+  const closed = new Set(nodeSets.flatMap((set) => [...set].map((k) => nodeByCoord.get(k))));
+  stages.forEach((s, i) => {
+    if (!hasExit(network, nodeByCoord.get(key(s.start)), closed)) problems.push(`tracé ${i + 1} : départ bloqué par une autre spéciale`);
+    if (!hasExit(network, nodeByCoord.get(key(s.finish)), closed)) problems.push(`tracé ${i + 1} : arrivée bloquée par une autre spéciale`);
+  });
+  return problems;
 }
 
 async function validateCommune([name, postal, radiusKm, profile], index) {
@@ -339,7 +374,7 @@ async function validateCommune([name, postal, radiusKm, profile], index) {
             ),
             ...(Math.abs(stage.reverse.stats.lengthKm - stage.stats.lengthKm) > 0.05 ? [`tracé ${i + 1} : longueur différente en sens inverse`] : []),
           ]),
-          ...checkAlternatives(result.stages),
+          ...checkAlternatives(result.stages, zone),
         ];
         if (genMs > MAX_GENERATE_MS) problems.push(`génération lente (${genMs} ms)`);
 
