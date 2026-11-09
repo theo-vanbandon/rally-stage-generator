@@ -141,7 +141,8 @@ export default function RouteGenerator() {
   const [slow, setSlow] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [hoverKm, setHoverKm] = useState(null);
-  const [focusPoint, setFocusPoint] = useState(null);
+  // Case du roadbook sélectionnée (clic dans le roadbook ou sur la carte) ; fly : la carte s'y rend
+  const [focusedCase, setFocusedCase] = useState(null);
   const [copied, setCopied] = useState(false);
   const [esNumber, setEsNumber] = useState("1");
   const [esName, setEsName] = useState("");
@@ -178,7 +179,7 @@ export default function RouteGenerator() {
     setSelectedIndex(trace);
     setReversed(isReversed);
     setHoverKm(null);
-    setFocusPoint(null);
+    setFocusedCase(null);
     writeViewParams({ trace, reversed: isReversed });
   };
 
@@ -412,7 +413,11 @@ export default function RouteGenerator() {
                     />
                   </label>
                 </div>
-                <Roadbook roadbook={stage.roadbook} onSelect={(c) => setFocusPoint(c.coord)} />
+                <Roadbook
+                  roadbook={stage.roadbook}
+                  selectedN={focusedCase?.n ?? null}
+                  onSelect={(c) => setFocusedCase({ ...c, fly: true })}
+                />
                 <div className="print-actions">
                   <span>Imprimer le roadbook (ou PDF) :</span>
                   {Object.entries(PRINT_FORMATS).map(([format, { label }]) => (
@@ -457,7 +462,8 @@ export default function RouteGenerator() {
             onSelect={(i) => showView(i, reversed)}
             searchArea={commune ? { lat: commune.lat, lon: commune.lon, radiusKm } : null}
             hoverPoint={hoverPoint}
-            focusPoint={focusPoint}
+            focusedCase={focusedCase}
+            onSelectCase={(c) => setFocusedCase({ ...c, fly: false })}
           />
           {stage && stage.stats.surfacePct.paved < 100 && (
             <ul className="surface-legend" aria-label="Légende des revêtements">

@@ -18,7 +18,7 @@ Interface React du générateur de spéciales de rallye.
 - Carte avec fonds **Plan IGN**, **photo aérienne IGN** et OpenStreetMap
 - Statistiques : longueur, sinuosité, lignes droites, dénivelé, pente max, revêtement
 - Profil d'altitude interactif (le survol positionne un repère sur la carte)
-- Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case
+- Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case, dont le point grossit (avec une onde) et affiche son étiquette ; à l'inverse, cliquer un point de la carte surligne sa case dans le roadbook
 - Impression du roadbook en A5 ou A4 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
 - Export **GPX** (avec altitudes et waypoints PK), **KML** (3D) et **GeoJSON**
 - Mentions légales (éditeur, hébergeur, sources des données, avertissement, données personnelles), accessibles depuis le pied de page ou par l'adresse `#mentions-legales`

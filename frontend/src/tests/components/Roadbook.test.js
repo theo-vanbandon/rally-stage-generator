@@ -40,6 +40,17 @@ describe('Roadbook Component', () => {
 });
 
 describe('RoadbookPrint Component', () => {
+  test('devrait surligner la case affichée sur la carte, et elle seule', () => {
+    const { rerender } = render(<Roadbook roadbook={mockStage.roadbook} selectedN={null} />);
+    expect(screen.getAllByRole('button').filter((b) => b.getAttribute('aria-current'))).toHaveLength(0);
+
+    rerender(<Roadbook roadbook={mockStage.roadbook} selectedN={2} />);
+    const current = screen.getAllByRole('button').filter((b) => b.getAttribute('aria-current') === 'true');
+    expect(current).toHaveLength(1);
+    expect(within(current[0]).getByText('2')).toBeInTheDocument();
+    expect(current[0]).toHaveClass('selected');
+  });
+
   test("devrait afficher l'en-tête de l'épreuve et toutes les cases", () => {
     const { container } = render(<RoadbookPrint stage={mockStage} esNumber="3" esName="Laventie" />);
 

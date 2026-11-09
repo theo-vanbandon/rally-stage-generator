@@ -48,6 +48,12 @@
   outline: none;
 }
 
+/* Case affichée sur la carte */
+.roadbook-row.selected {
+  background: var(--accent-soft);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
 .roadbook-n {
   font-weight: 800;
   font-size: 1.05rem;

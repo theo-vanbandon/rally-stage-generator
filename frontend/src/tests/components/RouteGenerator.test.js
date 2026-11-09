@@ -1,13 +1,18 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import RouteGenerator from '../../components/RouteGenerator';
 import { generateStage } from '../../services/api';
 import { mockStage } from '../fixtures/stage';
 
-// Leaflet ne fonctionne pas dans jsdom
+// Leaflet ne fonctionne pas dans jsdom : la carte est remplacée, ses props sont gardées pour les tests
+const mockMapProps = [];
+const lastMapProps = () => mockMapProps[mockMapProps.length - 1];
 jest.mock('../../components/MapView', () => ({
   __esModule: true,
-  default: () => <div data-testid="map" />,
+  default: (props) => {
+    mockMapProps.push(props);
+    return <div data-testid="map" />;
+  },
   SURFACE_STYLES: { paved: { color: 'red' }, gravel: { color: 'brown' }, dirt: { color: 'brown', dashArray: '7 6' } },
 }));
 jest.mock('../../services/api', () => ({
@@ -87,6 +92,23 @@ describe('RouteGenerator Component', () => {
     expect(await screen.findByText(/zone de recherche élargie à 10 km/)).toBeInTheDocument();
     expect(screen.getByRole('slider')).toHaveValue('10');
     expect(window.location.search).toContain('r=10');
+  });
+
+  test('cliquer une case du roadbook la surligne et la montre sur la carte', async () => {
+    generateStage.mockResolvedValueOnce(response(['a']));
+    render(<RouteGenerator />);
+    const roadbook = await screen.findByRole('list', { name: 'Roadbook' });
+    const rows = within(roadbook).getAllByRole('button');
+
+    fireEvent.click(rows[1]);
+    expect(rows[1]).toHaveAttribute('aria-current', 'true');
+    expect(lastMapProps().focusedCase).toEqual(expect.objectContaining({ n: mockStage.roadbook[1].n, fly: true }));
+
+    // Clic sur un point de la carte : la case correspondante est surlignée, sans déplacer la carte
+    act(() => lastMapProps().onSelectCase(mockStage.roadbook[2]));
+    expect(rows[2]).toHaveAttribute('aria-current', 'true');
+    expect(rows[1]).not.toHaveAttribute('aria-current');
+    expect(lastMapProps().focusedCase).toEqual(expect.objectContaining({ n: mockStage.roadbook[2].n, fly: false }));
   });
 
   describe('boucle', () => {

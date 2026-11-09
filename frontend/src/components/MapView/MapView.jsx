@@ -179,14 +179,44 @@ function FitToStage({ positions }) {
   return null;
 }
 
-/** Centre la carte sur un point (clic dans le roadbook) */
-function FlyTo({ point }) {
+/** Centre la carte sur la case sélectionnée (clic dans le roadbook) ; chaque clic relance le vol */
+function FlyTo({ focus }) {
   const map = useMap();
   useEffect(() => {
-    if (point) map.flyTo([point[1], point[0]], Math.max(map.getZoom(), 15), { duration: 0.6 });
-  }, [map, point]);
+    if (focus?.fly) map.flyTo([focus.coord[1], focus.coord[0]], Math.max(map.getZoom(), 15), { duration: 0.6 });
+  }, [map, focus]);
   return null;
 }
+
+const focusIcon = new L.DivIcon({
+  html: '<span class="focus-marker" aria-hidden="true"><span class="focus-pulse"></span><span class="focus-dot"></span></span>',
+  className: "focus-marker-icon",
+  iconSize: [44, 44],
+  iconAnchor: [22, 22],
+});
+
+/** Case sélectionnée : point agrandi qui pulse, avec son étiquette affichée en permanence */
+function FocusMarker({ roadbookCase }) {
+  const { n, coord, km, direction, road } = roadbookCase;
+  return (
+    <Marker position={[coord[1], coord[0]]} icon={focusIcon} zIndexOffset={1200} interactive={false} keyboard={false}>
+      <Tooltip permanent direction="top" offset={[0, -18]} className="focus-tooltip">
+        <strong>Case {n}</strong> — km {km.toFixed(2)} — {direction}
+        {road ? ` (${road})` : ""}
+      </Tooltip>
+    </Marker>
+  );
+}
+
+FocusMarker.propTypes = {
+  roadbookCase: PropTypes.shape({
+    n: PropTypes.number.isRequired,
+    coord: PropTypes.arrayOf(PropTypes.number).isRequired,
+    km: PropTypes.number.isRequired,
+    direction: PropTypes.string.isRequired,
+    road: PropTypes.string,
+  }).isRequired,
+};
 
 export default function MapView({
   stages = [],
@@ -194,7 +224,8 @@ export default function MapView({
   onSelect = () => {},
   searchArea = null,
   hoverPoint = null,
-  focusPoint = null,
+  focusedCase = null,
+  onSelectCase = () => {},
 }) {
   const lines = useMemo(() => stages.map((s) => toLatLngs(s.geometry.coordinates)), [stages]);
   const selected = stages[selectedIndex];
@@ -284,7 +315,13 @@ export default function MapView({
           {selected.roadbook
             .filter((c) => c.type === "junction" || c.type === "surface")
             .map((c) => (
-              <CircleMarker key={c.n} center={[c.coord[1], c.coord[0]]} radius={5} pathOptions={STYLES.pk}>
+              <CircleMarker
+                key={c.n}
+                center={[c.coord[1], c.coord[0]]}
+                radius={5}
+                pathOptions={STYLES.pk}
+                eventHandlers={{ click: () => onSelectCase(c) }}
+              >
                 <Tooltip direction="top" offset={[0, -6]}>
                   <strong>Case {c.n}</strong> — km {c.km.toFixed(2)} — {c.direction}
                   {c.road ? ` (${c.road})` : ""}
@@ -320,7 +357,8 @@ export default function MapView({
         />
       )}
 
-      <FlyTo point={focusPoint} />
+      {focusedCase && <FocusMarker key={focusedCase.n} roadbookCase={focusedCase} />}
+      <FlyTo focus={focusedCase} />
     </MapContainer>
   );
 }
@@ -349,5 +387,13 @@ MapView.propTypes = {
   onSelect: PropTypes.func,
   searchArea: PropTypes.shape({ lat: PropTypes.number, lon: PropTypes.number, radiusKm: PropTypes.number }),
   hoverPoint: PropTypes.arrayOf(PropTypes.number),
-  focusPoint: PropTypes.arrayOf(PropTypes.number),
+  focusedCase: PropTypes.shape({
+    n: PropTypes.number,
+    coord: PropTypes.arrayOf(PropTypes.number),
+    km: PropTypes.number,
+    direction: PropTypes.string,
+    road: PropTypes.string,
+    fly: PropTypes.bool,
+  }),
+  onSelectCase: PropTypes.func,
 };
