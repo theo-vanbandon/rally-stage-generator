@@ -6,13 +6,14 @@ const cors = require("cors");
 const compression = require("compression");
 
 const generateRoutes = require("./routes/generate");
+const liaisonRoutes = require("./routes/liaisons");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
 app.use(compression()); // réponses JSON compressées (spéciale + sens inverse : ~540 Ko → ~140 Ko)
-app.use(express.json());
+app.use(express.json({ limit: "2mb" })); // calcul des liaisons : tracés des spéciales envoyés par le client
 
 // CORS - Autoriser le frontend en production et en dev
 const corsOptions = {
@@ -26,6 +27,7 @@ app.use(cors(corsOptions));
 
 // Routes
 app.use("/api/generate", generateRoutes);
+app.use("/api/liaisons", liaisonRoutes);
 
 // Health check
 app.get("/api/ping", (req, res) => {

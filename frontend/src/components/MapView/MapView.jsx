@@ -39,6 +39,7 @@ const finishIcon = flagIcon("finish", "A");
 const stopIcon = flagIcon("stop", "S");
 
 const LOOP_ARROW_COLOR = "#1565c0";
+const LIAISON_COLOR = "#8e24aa";
 
 const arrowHeadIcon = (angle) =>
   new L.DivIcon({
@@ -160,7 +161,19 @@ const STYLES = {
   sharedPortion: { color: LOOP_ARROW_COLOR, weight: 16, opacity: 0.45, lineCap: "round", interactive: false },
   loopArrowCasing: { color: "#ffffff", weight: 9, opacity: 0.95, lineCap: "round", interactive: false },
   loopArrow: { color: LOOP_ARROW_COLOR, weight: 5, opacity: 1, lineCap: "round", interactive: false },
+  // Liaisons entre spéciales : violet (ni la couleur des spéciales, ni celle des routes du Plan IGN)
+  liaisonCasing: { color: "#ffffff", weight: 7, opacity: 0.85, interactive: false },
+  liaison: { color: LIAISON_COLOR, weight: 4, opacity: 0.9, lineCap: "round" },
 };
+
+/** Badge « ES n » au départ de chaque spéciale : l'ordre du rallye se lit sur la carte */
+const esIcon = (n, selected) =>
+  new L.DivIcon({
+    html: `<span class="es-badge${selected ? " selected" : ""}">ES${n}</span>`,
+    className: "es-badge-icon",
+    iconSize: [40, 20],
+    iconAnchor: [-8, 30],
+  });
 
 // Style du tracé selon le revêtement (voir la légende dans RouteGenerator).
 // Pas d'orange : c'est la couleur des grands axes sur le Plan IGN. Pointillés = chemin, comme sur une carte.
@@ -226,6 +239,8 @@ export default function MapView({
   hoverPoint = null,
   focusedCase = null,
   onSelectCase = () => {},
+  liaisons = [],
+  esNumbers = [],
 }) {
   const lines = useMemo(() => stages.map((s) => toLatLngs(s.geometry.coordinates)), [stages]);
   const selected = stages[selectedIndex];
@@ -266,6 +281,37 @@ export default function MapView({
 
       {searchBounds && (
         <Rectangle bounds={searchBounds} pathOptions={STYLES.searchArea} />
+      )}
+
+      {liaisons.map((l) => (
+        <React.Fragment key={`liaison-${l.from}`}>
+          <Polyline positions={toLatLngs(l.coordinates)} pathOptions={STYLES.liaisonCasing} />
+          <Polyline
+            positions={toLatLngs(l.coordinates)}
+            pathOptions={l.warnings?.length ? { ...STYLES.liaison, dashArray: "8 7" } : STYLES.liaison}
+          >
+            <Tooltip sticky>
+              {l.label} — {l.km.toFixed(1)} km, ≈ {l.minutes} min
+              {l.warnings?.length ? ` — ⚠ ${l.warnings.join(" · ")}` : ""}
+            </Tooltip>
+          </Polyline>
+        </React.Fragment>
+      ))}
+
+      {stages.map((s, i) =>
+        esNumbers[i] ? (
+          <Marker
+            key={`es-${s.id}`}
+            position={[s.geometry.coordinates[0][1], s.geometry.coordinates[0][0]]}
+            icon={esIcon(esNumbers[i], i === selectedIndex)}
+            zIndexOffset={950}
+            eventHandlers={{ click: () => onSelect(i) }}
+          >
+            <Tooltip direction="top" offset={[20, -30]}>
+              ES{esNumbers[i]} — tracé {i + 1}, départ
+            </Tooltip>
+          </Marker>
+        ) : null
       )}
 
       {lines.map((positions, i) =>
@@ -396,4 +442,15 @@ MapView.propTypes = {
     fly: PropTypes.bool,
   }),
   onSelectCase: PropTypes.func,
+  liaisons: PropTypes.arrayOf(
+    PropTypes.shape({
+      from: PropTypes.number,
+      coordinates: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)),
+      label: PropTypes.string,
+      warnings: PropTypes.arrayOf(PropTypes.string),
+      km: PropTypes.number,
+      minutes: PropTypes.number,
+    })
+  ),
+  esNumbers: PropTypes.arrayOf(PropTypes.number),
 };

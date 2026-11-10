@@ -1246,16 +1246,32 @@ function findStopPoint(network, finishNode, stageNodes) {
   const used = new Set([finishNode]);
   let km = 0;
   let node = finishNode;
-  const done = () => ({ coord: coords.at(-1), path: coords, distanceKm: round2(km), firstSeg: network.linkSeg[path[1].link] });
+  let prev = null;
+  // Suite de la route après le point stop (jusqu'au prochain carrefour) : point de départ de la liaison suivante
+  let ahead = null;
+  const done = () => ({
+    coord: coords.at(-1),
+    path: coords,
+    distanceKm: round2(km),
+    firstSeg: network.linkSeg[path[1].link],
+    ahead: ahead ?? { coords: [coords.at(-1)], node: nodes[node].coord, from: prev === null ? null : nodes[prev].coord },
+  });
 
   // Avance le long d'une route, coupée dès que la distance voulue est atteinte ; true = point stop trouvé
   const follow = (link, next) => {
-    for (const p of linkCoords(network, link, node).slice(1)) {
+    const pts = linkCoords(network, link, node);
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i];
       km += haversineKm(coords.at(-1), p);
       coords.push(p);
-      if (km >= STOP_MIN_KM) return true;
+      if (km >= STOP_MIN_KM) {
+        // node : carrefour d'où l'on vient (pas de demi-tour), next : carrefour où mène la route
+        ahead = { coords: pts.slice(i), node: nodes[next].coord, from: nodes[node].coord };
+        return true;
+      }
     }
     used.add(next);
+    prev = node;
     node = next;
     return false;
   };
@@ -1534,7 +1550,7 @@ function describeStage(network, prefs, candidate) {
     },
     start: coords[0],
     finish: coords.at(-1),
-    stop: stop && { coord: stop.coord, path: stop.path, distanceKm: stop.distanceKm },
+    stop: stop && { coord: stop.coord, path: stop.path, distanceKm: stop.distanceKm, ahead: stop.ahead },
     roadbook: cases,
     roads,
     surfaces,

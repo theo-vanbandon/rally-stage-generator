@@ -12,6 +12,7 @@ Rally Stage Generator génère des tracés de spéciales de rallye autour d'une 
 ## ✨ Fonctionnalités
 
 - 🗺️ Spéciales hors agglomération, différentes à chaque clic (3 tracés proposés)
+- 🔀 Ordre du rallye par glisser-déposer, et liaisons entre les ES calculées et dessinées sur la carte
 - 🏁 Revêtement au choix : asphalte, terre ou mixte ; longueur courte, moyenne ou longue
 - ↻ Option boucle, deux types :
   - **carrefour** : la spéciale recroise son tracé à un carrefour ;

@@ -86,3 +86,43 @@ export async function searchCommunes(query, { signal } = {}) {
       population: c.population ?? 0,
     }));
 }
+
+/**
+ * Calcule les liaisons entre spéciales, dans l'ordre du rallye
+ * @param {object} params
+ * @param {number} params.lat - Centre de la génération (même réseau routier, déjà en cache côté serveur)
+ * @param {number} params.lon
+ * @param {number} params.radiusKm - Rayon de la génération
+ * @param {object[]} params.stages - Spéciales dans l'ordre du rallye, chacune dans son sens (format de l'API)
+ * @param {{signal?: AbortSignal}} [options]
+ * @returns {Promise<{liaisons: object[]}>}
+ */
+export async function computeLiaisons({ lat, lon, radiusKm, stages }, { signal } = {}) {
+  const body = {
+    lat,
+    lon,
+    radiusKm,
+    // Tracés en 2D : les altitudes ne servent pas aux liaisons
+    stages: stages.map((s) => ({
+      start: s.start,
+      finish: s.finish,
+      stop: s.stop ? { coord: s.stop.coord, ahead: s.stop.ahead } : null,
+      coordinates: s.geometry.coordinates.map(([lon2, lat2]) => [lon2, lat2]),
+    })),
+  };
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}/liaisons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") throw err;
+    throw new Error("Impossible de joindre le serveur pour calculer les liaisons.");
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+  return data;
+}

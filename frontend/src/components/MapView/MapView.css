@@ -166,3 +166,28 @@
   font-weight: 600;
   border-color: #e53935;
 }
+
+/* Numéro d'ES au départ de chaque spéciale (ordre du rallye) */
+.es-badge-icon {
+  background: transparent;
+  border: none;
+}
+
+.es-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 2px solid #fff;
+  background: #37474f;
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.es-badge.selected {
+  background: #e53935;
+}

@@ -1,0 +1,50 @@
+.liaison-summary ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.liaison-summary li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+}
+
+.liaison-summary li strong {
+  color: var(--text);
+}
+
+.liaison-summary li.failed span:last-child {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.liaison-summary small {
+  font-size: 0.75rem;
+}
+
+.liaison-summary p {
+  margin: 0.25rem 0 0;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.liaison-swatch {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.liaison-summary .liaison-warning {
+  flex-basis: 100%;
+  margin-left: calc(18px + 0.4rem);
+  color: #b26a00;
+  font-size: 0.78rem;
+}

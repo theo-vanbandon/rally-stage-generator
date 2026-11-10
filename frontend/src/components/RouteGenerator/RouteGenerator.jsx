@@ -7,6 +7,9 @@ import ElevationProfile from "../ElevationProfile";
 import Roadbook from "../Roadbook";
 import RoadbookPrint, { PRINT_FORMATS } from "../RoadbookPrint";
 import LegalNotice from "../LegalNotice";
+import StageTabs from "../StageTabs";
+import LiaisonSummary, { LIAISON_COLOR } from "../LiaisonSummary";
+import useLiaisons from "../../hooks/useLiaisons";
 import { generateStage, pingBackend } from "../../services/api";
 import { exportStages, exportFilename } from "../../services/exportService";
 import { cumulativeDistances, pointAtKm } from "../../utils/geometry";
@@ -76,7 +79,23 @@ function readUrlParams() {
     avoid: q.get("vu") ? q.get("vu").split(",").filter(Boolean) : [],
     trace: Math.max(0, (Number.parseInt(q.get("t"), 10) || 1) - 1),
     reversedTraces: readReversed(q.get("sens"), Math.max(0, (Number.parseInt(q.get("t"), 10) || 1) - 1)),
+    order: q.get("o") ? q.get("o").split(",").map((n) => Number.parseInt(n, 10) - 1) : null,
   };
+}
+
+/** Ordre du rallye valide pour `count` tracés (permutation), sinon l'ordre des tracés */
+function validOrder(order, count) {
+  const identity = [...Array(count).keys()];
+  if (!order || order.length !== count) return identity;
+  return [...order].sort((a, b) => a - b).every((v, i) => v === i) ? order : identity;
+}
+
+/** Ordre du rallye dans le lien partagé : o=2,1,3 (omis si c'est l'ordre des tracés) */
+function writeOrderParam(order) {
+  const q = new URLSearchParams(window.location.search);
+  if (order.some((v, i) => v !== i)) q.set("o", order.map((i) => i + 1).join(","));
+  else q.delete("o");
+  window.history.replaceState(null, "", `?${q}`);
 }
 
 /**
@@ -176,7 +195,11 @@ export default function RouteGenerator() {
   };
   const abortRef = useRef(null);
   // Lien partagé : tracé et sens à réafficher après la première génération
-  const pendingView = useRef(initial ? { trace: initial.trace, reversedTraces: initial.reversedTraces } : null);
+  const pendingView = useRef(
+    initial ? { trace: initial.trace, reversedTraces: initial.reversedTraces, order: initial.order } : null
+  );
+  // Ordre du rallye : indices des tracés dans l'ordre des ES (ES1 = rallyOrder[0])
+  const [rallyOrder, setRallyOrder] = useState([]);
   // Tracés déjà proposés pour la recherche en cours (réinitialisé si un paramètre change)
   const seenRef = useRef(initial ? { key: searchKey(initial), ids: initial.avoid } : { key: "", ids: [] });
 
@@ -189,6 +212,31 @@ export default function RouteGenerator() {
   );
   const stage = displayedStages[selectedIndex];
   const reversed = reversedTraces.includes(selectedIndex);
+
+  // Liaisons : du point stop de chaque ES au départ de la suivante, dans l'ordre du rallye et le sens de chacune
+  const orderedStages = useMemo(
+    () => (rallyOrder.length === displayedStages.length ? rallyOrder.map((i) => displayedStages[i]) : []),
+    [rallyOrder, displayedStages]
+  );
+  const liaisonState = useLiaisons(result?.center ?? null, result?.radiusKm ?? null, orderedStages);
+  const mapLiaisons = useMemo(
+    () =>
+      liaisonState.liaisons
+        .filter((l) => l.ok)
+        .map((l) => ({ ...l, label: `Liaison ES${l.from + 1} → ES${l.to + 1}` })),
+    [liaisonState]
+  );
+  const esNumbers = useMemo(() => {
+    const numbers = [];
+    rallyOrder.forEach((trace, position) => {
+      numbers[trace] = position + 1;
+    });
+    return numbers;
+  }, [rallyOrder]);
+  const reorderStages = (order) => {
+    setRallyOrder(order);
+    writeOrderParam(order);
+  };
 
   const showView = useCallback((trace, traces) => {
     setSelectedIndex(trace);
@@ -244,10 +292,13 @@ export default function RouteGenerator() {
         setExportPick(null);
         writeUrlParams({ commune, radiusKm: data.radiusKm, surface, length, loop, seed: data.seed, avoid: previous });
         // Nouvelle génération : premier tracé, tous dans le sens d'origine (sauf lien partagé)
-        const view = pendingView.current ?? { trace: 0, reversedTraces: [] };
+        const view = pendingView.current ?? { trace: 0, reversedTraces: [], order: null };
         pendingView.current = null;
         const count = data.alternatives.length + 1;
         showView(Math.min(view.trace, count - 1), view.reversedTraces.filter((i) => i < count));
+        const order = validOrder(view.order, count);
+        setRallyOrder(order);
+        writeOrderParam(order);
       } catch (err) {
         if (err.name !== "AbortError") setErrorMsg(err.message || "Erreur inconnue");
       } finally {
@@ -369,24 +420,15 @@ export default function RouteGenerator() {
 
           {stage && (
             <section className="results" aria-live="polite">
-              {stages.length > 1 && (
-                <div className="proposals" role="tablist" aria-label="Tracés proposés">
-                  {stages.map((s, i) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={i === selectedIndex}
-                      className={i === selectedIndex ? "selected" : ""}
-                      onClick={() => showView(i, reversedTraces)}
-                    >
-                      <strong>Tracé {i + 1}</strong>
-                      <small>
-                        {s.stats.lengthKm.toFixed(1)} km{reversedTraces.includes(i) ? " · inverse" : ""}
-                      </small>
-                    </button>
-                  ))}
-                </div>
+              {stages.length > 1 && rallyOrder.length === stages.length && (
+                <StageTabs
+                  stages={displayedStages}
+                  order={rallyOrder}
+                  selectedIndex={selectedIndex}
+                  reversedTraces={reversedTraces}
+                  onSelect={(i) => showView(i, reversedTraces)}
+                  onReorder={reorderStages}
+                />
               )}
 
               <button
@@ -397,6 +439,8 @@ export default function RouteGenerator() {
               >
                 <span aria-hidden="true">⇄</span> {reversed ? "Sens inverse affiché — revenir au sens d'origine" : "Inverser le sens"}
               </button>
+
+              {stages.length > 1 && <LiaisonSummary count={stages.length} liaisons={liaisonState} />}
 
               {result.expandedFrom && (
               <p className="notice">
@@ -528,23 +572,32 @@ export default function RouteGenerator() {
             stages={displayedStages}
             selectedIndex={selectedIndex}
             onSelect={(i) => showView(i, reversedTraces)}
+            liaisons={mapLiaisons}
+            esNumbers={esNumbers}
             searchArea={commune ? { lat: commune.lat, lon: commune.lon, radiusKm } : null}
             hoverPoint={hoverPoint}
             focusedCase={focusedCase}
             onSelectCase={(c) => setFocusedCase({ ...c, fly: false })}
           />
-          {stage && stage.stats.surfacePct.paved < 100 && (
-            <ul className="surface-legend" aria-label="Légende des revêtements">
-              {[
-                ["paved", "Asphalte"],
-                ["gravel", "Route empierrée"],
-                ["dirt", "Chemin de terre"],
-              ].map(([key, label]) => (
-                <li key={key}>
-                  <span className={`legend-${key}`} style={{ color: SURFACE_STYLES[key].color }} aria-hidden="true" />
-                  {label}
+          {stage && (stage.stats.surfacePct.paved < 100 || mapLiaisons.length > 0) && (
+            <ul className="surface-legend" aria-label="Légende de la carte">
+              {stage.stats.surfacePct.paved < 100 &&
+                [
+                  ["paved", "Asphalte"],
+                  ["gravel", "Route empierrée"],
+                  ["dirt", "Chemin de terre"],
+                ].map(([key, label]) => (
+                  <li key={key}>
+                    <span className={`legend-${key}`} style={{ color: SURFACE_STYLES[key].color }} aria-hidden="true" />
+                    {label}
+                  </li>
+                ))}
+              {mapLiaisons.length > 0 && (
+                <li>
+                  <span style={{ color: LIAISON_COLOR }} aria-hidden="true" />
+                  Liaison
                 </li>
-              ))}
+              )}
             </ul>
           )}
           {loading && (

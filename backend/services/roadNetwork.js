@@ -203,6 +203,21 @@ function branchShape(coords, projection) {
  * Route utilisable en liaison (rejoindre le départ, quitter l'arrivée) : toute route publique,
  * y compris en ville et sur les grands axes, mais pas les chemins de terre
  */
+/**
+ * Vitesse moyenne estimée d'une route de liaison (km/h), pour choisir le trajet le plus rapide et estimer le temps :
+ * selon l'importance IGN (1 = grand axe … 6 = desserte), plus lente en agglomération et sur route empierrée
+ */
+function linkSpeedKmh(seg) {
+  const byImportance = { 1: 90, 2: 80, 3: 70, 4: 60, 5: 50, 6: 40 };
+  let speed = byImportance[seg.importance] ?? 40;
+  if (seg.nature === "Route empierrée") speed = Math.min(speed, 30);
+  if (seg.urban) speed = Math.min(speed, 40);
+  return speed;
+}
+
+/** Sens de circulation d'une route de liaison : 0 double sens, 1 sens de numérisation (a→b), -1 inverse (b→a) */
+const linkOneWay = (seg) => (seg.direction === "Sens direct" ? 1 : seg.direction === "Sens inverse" ? -1 : 0);
+
 function isLinkRoad(seg) {
   if (seg.nature === "Chemin") return false;
   if (seg.private) return false;
@@ -215,6 +230,7 @@ function isLinkRoad(seg) {
  * - edges : tronçons utilisables en spéciale (hors villes et centres-bourgs)
  * - nodes[i].links / linkIds : voisins par le réseau de liaison (toutes routes publiques) et route empruntée
  * - linkGeometries[id] / linkFrom[id] / linkSeg[id] : tracé de chaque route de liaison, son nœud de départ, son tronçon
+ * - linkKm[id] / linkSpeed[id] / linkOneWay[id] : longueur, vitesse estimée (km/h) et sens de circulation (liaisons)
  * - nodes[i].branches : toutes les routes du carrefour { seg, kind, shape } pour les tulipes
  * - nodes[i].anchor : nœud relié au "reste du monde" (grand axe, agglomération, bord de la zone)
  *
@@ -229,6 +245,9 @@ function buildNetwork(segments, center) {
   // Géométrie des routes de liaison (tracé du point stop) : tableau plat lon,lat en Float32 (précision ~3 cm)
   const linkGeometries = [];
   const linkFrom = [];
+  const linkKm = [];
+  const linkSpeed = [];
+  const linkOneWays = [];
   const stageSegments = new Set(dropDenseUrbanAreas(segments, projection));
 
   const nodeOf = (c) => {
@@ -263,6 +282,9 @@ function buildNetwork(segments, center) {
       linkGeometries.push(Float32Array.from(seg.coords.flatMap((c) => [c[0], c[1]])));
       linkFrom.push(a);
       linkSeg.push(segIndex);
+      linkKm.push(lineLengthKm(seg.coords));
+      linkSpeed.push(linkSpeedKmh(seg));
+      linkOneWays.push(linkOneWay(seg));
       nodes[a].links.push(b);
       nodes[a].linkIds.push(linkId);
       nodes[b].links.push(a);
@@ -311,7 +333,17 @@ function buildNetwork(segments, center) {
   });
 
   markBorderAnchors(nodes, projection);
-  return { nodes, edges, projection, linkGeometries, linkFrom, linkSeg };
+  return {
+    nodes,
+    edges,
+    projection,
+    linkGeometries,
+    linkFrom,
+    linkSeg,
+    linkKm: Float32Array.from(linkKm),
+    linkSpeed: Uint8Array.from(linkSpeed),
+    linkOneWay: Int8Array.from(linkOneWays),
+  };
 }
 
 /**
@@ -330,4 +362,4 @@ function markBorderAnchors(nodes, projection) {
   });
 }
 
-module.exports = { buildNetwork, dropDenseUrbanAreas, isDrivable, isLinkRoad, branchKind, branchShape, surfaceOf, basePreference, measureShape, fillElevations };
+module.exports = { buildNetwork, dropDenseUrbanAreas, isDrivable, isLinkRoad, linkSpeedKmh, branchKind, branchShape, surfaceOf, basePreference, measureShape, fillElevations };

@@ -54,12 +54,14 @@ La **graine** (`seed`) rend la génération reproductible : même zone + mêmes 
 backend/
 ├── index.js                    # Point d'entrée Express
 ├── routes/
-│   └── generate.js             # POST /api/generate (validation, cache, orchestration)
+│   ├── generate.js             # POST /api/generate (validation, cache, orchestration)
+│   └── liaisons.js             # POST /api/liaisons (liaisons dans l'ordre du rallye)
 ├── services/
 │   ├── geocoder.js             # Communes françaises (geo.api.gouv.fr + Nominatim)
 │   ├── bdtopo.js               # Téléchargement du réseau IGN BD TOPO
 │   ├── roadNetwork.js          # Graphe routier + caractérisation des tronçons
 │   ├── stageGenerator.js       # Marches aléatoires, notation, roadbook, altitude
+│   ├── liaisons.js             # Trajets point stop → départ suivant (Dijkstra, sens interdits)
 │   └── cache.js                # Cache LRU mémoire/disque
 ├── utils/
 │   └── geometry.js             # Distances, caps, rééchantillonnage, RNG
@@ -185,6 +187,43 @@ Chaque spéciale (principale et alternatives) contient `reverse` : le même trac
 Si le rayon demandé ne permet aucune spéciale (vallée urbanisée, massif fermé à la circulation…), le serveur réessaie à +5 puis +10 km (20 km max) ; la réponse indique alors `radiusKm` (rayon utilisé) et `expandedFrom` (rayon demandé).
 
 **Erreurs** : `400` paramètre invalide, `404` commune inconnue ou aucune spéciale possible même élargie, `422` zone trop dense pour être analysée (plus de 150 000 tronçons, typiquement le cœur d'une métropole), `502` service IGN indisponible.
+
+### `POST /api/liaisons`
+
+Liaisons entre les spéciales proposées, dans l'ordre du rallye choisi par l'utilisateur (chacune dans son sens) : du point stop d'une spéciale jusqu'au départ de la suivante.
+
+- Trajet le plus rapide sur les routes publiques (vitesse estimée selon l'importance IGN, plus lente en agglomération et sur route empierrée), sens interdits respectés. Le réseau est celui de la génération, déjà en cache.
+- Une liaison est **toujours proposée**. Le calcul descend par niveaux, du plus propre au moins bon, et signale le compromis dans `warnings` :
+  1. aucune spéciale empruntée ni traversée, pas de demi-tour au point stop (la liaison continue sur la route du stop, `stop.ahead` renvoyé par `/api/generate`) ;
+  2. seules l'ES quittée (des concurrents y roulent encore) et l'ES rejointe sont évitées : passage possible par une autre ES, « à faire en dehors de sa fermeture » ;
+  3. ces deux niveaux sont réessayés sur une zone élargie (+5, puis +10 km) : le bon trajet passe souvent juste au-delà de la zone ;
+  4. demi-tour après le point stop ;
+  5. traversée de l'ES quittée ou rejointe à un carrefour, sans rouler dessus (« point de traversée à organiser ») ;
+  6. dernier recours : le moins possible de spéciale est emprunté, avec la distance indiquée (souvent quelques centaines de mètres en fond de vallée, quand la spéciale est la seule route).
+- Sur les communes du banc de test (toutes les combinaisons d'ordre et de sens), environ 88 % des liaisons sont propres (niveaux 1 et 3), et aucune n'est impossible.
+
+**Requête**
+```json
+{
+  "lat": 50.6094, "lon": 2.7884, "radiusKm": 10,
+  "stages": [
+    { "start": [2.75, 50.69], "finish": [2.80, 50.68], "stop": { "coord": [2.80, 50.69], "ahead": { "coords": [[2.80, 50.69], [2.81, 50.69]], "node": [2.81, 50.69], "from": [2.80, 50.68] } }, "coordinates": [[2.75, 50.69], "..."] },
+    { "...": "spéciale suivante" }
+  ]
+}
+```
+
+**Réponse**
+```json
+{
+  "ok": true,
+  "liaisons": [
+    { "from": 0, "to": 1, "ok": true, "tier": 1, "warnings": [], "km": 16.04, "minutes": 20, "coordinates": [[2.80, 50.69], "..."] },
+    { "from": 1, "to": 2, "ok": true, "tier": 4, "warnings": ["traverse l'ES2 à un carrefour (point de traversée à organiser)"], "km": 9.1, "minutes": 12, "coordinates": ["..."] }
+  ]
+}
+```
+`tier` : niveau de compromis (1 = propre). `expandedKm` : présent quand la liaison a été calculée sur une zone élargie. `ok: false` n'arrive que si aucune route ne relie les deux spéciales dans les données (départ isolé du réseau).
 
 ### `GET /api/ping`
 

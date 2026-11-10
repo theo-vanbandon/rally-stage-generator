@@ -1,0 +1,38 @@
+/* Onglets glissables : la barre est le rail */
+.stage-tabs {
+  position: relative;
+  /* Onglets de même largeur, quel que soit leur texte (« · inverse ») */
+  grid-auto-columns: minmax(0, 1fr);
+  user-select: none;
+}
+
+.stage-tabs button {
+  position: relative;
+  /* Glisser horizontalement sur écran tactile sans faire défiler la page ; le défilement vertical reste possible */
+  touch-action: pan-y;
+  cursor: grab;
+  transition: transform 0.15s ease;
+}
+
+.stage-tabs.dragging button {
+  cursor: grabbing;
+}
+
+.stage-tabs button.dragged {
+  z-index: 2;
+  transition: none;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.stage-tab-es {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-tabs button {
+    transition: none;
+  }
+}

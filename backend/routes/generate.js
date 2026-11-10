@@ -224,3 +224,6 @@ router.post("/", async (req, res) => {
 module.exports = router;
 module.exports.parseRequest = parseRequest;
 module.exports.searchRadii = searchRadii;
+module.exports.loadNetwork = loadNetwork;
+module.exports.HttpError = HttpError;
+module.exports.RADIUS_KM = [MIN_RADIUS_KM, MAX_RADIUS_KM];

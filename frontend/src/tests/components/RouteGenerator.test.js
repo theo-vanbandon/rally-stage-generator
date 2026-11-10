@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import RouteGenerator from '../../components/RouteGenerator';
-import { generateStage } from '../../services/api';
+import { generateStage, computeLiaisons } from '../../services/api';
 import { exportStages } from '../../services/exportService';
 import { mockStage } from '../fixtures/stage';
 
@@ -22,6 +22,7 @@ jest.mock('../../services/exportService', () => ({
 }));
 jest.mock('../../services/api', () => ({
   generateStage: jest.fn(),
+  computeLiaisons: jest.fn(),
   pingBackend: jest.fn(),
   searchCommunes: jest.fn(() => Promise.resolve([])),
 }));
@@ -31,6 +32,7 @@ const withReverse = (id) => ({ ...mockStage, id, reverse: { ...mockStage, id: `$
 
 const response = (ids, extra = {}) => ({
   ok: true,
+  center: { lat: 50.6094, lon: 2.7884, name: 'Laventie' },
   radiusKm: 5,
   expandedFrom: null,
   seed: 1,
@@ -45,6 +47,10 @@ const response = (ids, extra = {}) => ({
 describe('RouteGenerator Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    computeLiaisons.mockImplementation(async ({ stages }) => ({
+      ok: true,
+      liaisons: stages.slice(1).map((_, i) => ({ from: i, to: i + 1, ok: true, km: 10 + i, minutes: 12 + i, coordinates: [[6, 44.5], [6.1, 44.6]] })),
+    }));
     window.history.replaceState(null, '', '/?name=Laventie&cp=62840&lat=50.6094&lon=2.7884&r=5&s=asphalt&l=medium&seed=1');
   });
 
@@ -87,7 +93,7 @@ describe('RouteGenerator Component', () => {
 
     expect(await screen.findByText(/Peu de pistes reliées/)).toBeInTheDocument();
     expect(screen.getByText(/20 % de terre/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Légende des revêtements')).toBeInTheDocument();
+    expect(screen.getByLabelText('Légende de la carte')).toBeInTheDocument();
   });
 
   test('devrait signaler une zone élargie et caler le curseur dessus', async () => {
@@ -114,6 +120,62 @@ describe('RouteGenerator Component', () => {
     expect(rows[2]).toHaveAttribute('aria-current', 'true');
     expect(rows[1]).not.toHaveAttribute('aria-current');
     expect(lastMapProps().focusedCase).toEqual(expect.objectContaining({ n: mockStage.roadbook[2].n, fly: false }));
+  });
+
+  describe('ordre du rallye et liaisons', () => {
+    test("calcule les liaisons dans l'ordre des onglets et les affiche", async () => {
+      generateStage.mockResolvedValueOnce(response(['a', 'b', 'c']));
+      render(<RouteGenerator />);
+      expect(await screen.findByText('ES1 → ES2')).toBeInTheDocument();
+      expect(await screen.findByText(/10\.0 km · ≈ 12 min/)).toBeInTheDocument();
+      expect(screen.getByText(/Total des liaisons : 21\.0 km · ≈ 25 min/)).toBeInTheDocument();
+      expect(computeLiaisons.mock.calls.at(-1)[0].stages.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+    });
+
+    test("changer l'ordre recalcule les liaisons et l'inscrit dans le lien", async () => {
+      generateStage.mockResolvedValueOnce(response(['a', 'b', 'c']));
+      render(<RouteGenerator />);
+      await screen.findByText(/Total des liaisons/);
+      fireEvent.keyDown(screen.getByRole('tab', { name: /Tracé 1/ }), { key: 'ArrowRight', altKey: true });
+
+      expect(screen.getAllByRole('tab').map((t) => t.textContent.slice(0, 10))).toEqual(['ES1Tracé 2', 'ES2Tracé 1', 'ES3Tracé 3']);
+      expect(window.location.search).toContain('o=2%2C1%2C3');
+      await waitFor(() => expect(computeLiaisons.mock.calls.at(-1)[0].stages.map((s) => s.id)).toEqual(['b', 'a', 'c']));
+    });
+
+    test('le sens inverse est pris en compte dans les liaisons', async () => {
+      generateStage.mockResolvedValueOnce(response(['a', 'b']));
+      render(<RouteGenerator />);
+      await screen.findByText(/≈ 12 min/);
+      fireEvent.click(screen.getByRole('button', { name: /Inverser le sens/ }));
+      await waitFor(() => expect(computeLiaisons.mock.calls.at(-1)[0].stages.map((s) => s.id)).toEqual(['a-inverse', 'b']));
+    });
+
+    test("un lien partagé rouvre l'ordre du rallye", async () => {
+      window.history.replaceState(null, '', '/?name=Gap&cp=05000&lat=44.58&lon=6.06&r=12&s=asphalt&l=medium&seed=7&o=3,1,2');
+      generateStage.mockResolvedValueOnce(response(['a', 'b', 'c']));
+      render(<RouteGenerator />);
+      await screen.findByText(/Total des liaisons/);
+      expect(screen.getAllByRole('tab').map((t) => t.textContent.slice(0, 10))).toEqual(['ES1Tracé 3', 'ES2Tracé 1', 'ES3Tracé 2']);
+    });
+
+    test("affiche le compromis d'une liaison", async () => {
+      computeLiaisons.mockResolvedValueOnce({
+        ok: true,
+        liaisons: [{ from: 0, to: 1, ok: true, tier: 4, km: 8.2, minutes: 11, coordinates: [[6, 44.5], [6.1, 44.6]], warnings: ["traverse l'ES1 à un carrefour (point de traversée à organiser)"] }],
+      });
+      generateStage.mockResolvedValueOnce(response(['a', 'b']));
+      render(<RouteGenerator />);
+      expect(await screen.findByText(/traverse l'ES1 à un carrefour/)).toBeInTheDocument();
+      expect(screen.getByText(/8\.2 km · ≈ 11 min/)).toBeInTheDocument();
+    });
+
+    test('signale une liaison impossible', async () => {
+      computeLiaisons.mockResolvedValueOnce({ ok: true, liaisons: [{ from: 0, to: 1, ok: false }] });
+      generateStage.mockResolvedValueOnce(response(['a', 'b']));
+      render(<RouteGenerator />);
+      expect(await screen.findByText(/aucune route trouvée entre ces deux spéciales/)).toBeInTheDocument();
+    });
   });
 
   describe('export', () => {

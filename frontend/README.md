@@ -6,7 +6,9 @@ Interface React du générateur de spéciales de rallye.
 
 - Recherche de commune avec autocomplétion (nom ou code postal, via geo.api.gouv.fr)
 - Choix de la zone (5–20 km), du revêtement (asphalte / terre / mixte) et de la longueur
-- 3 tracés proposés par génération, cliquables sur la carte. Ils sont réalisables le même jour : ils ne se croisent pas, sont écartés d'au moins 500 m (250 m sur une petite zone) et aucun ne bloque l'accès au départ ou à l'arrivée d'un autre
+- 3 tracés proposés par génération, cliquables sur la carte. Leurs onglets donnent l'ordre du rallye (ES1, ES2, ES3) : on le change en faisant glisser un onglet sur sa barre (rail horizontal, l'onglet n'en sort pas), ou avec Alt + ← / →. L'ordre est retenu dans le lien partagé (`o=2,3,1`).
+- Liaisons entre les ES, dessinées en violet sur la carte : du point stop d'une spéciale au départ de la suivante, sens interdits respectés ; distance et temps estimé de chaque liaison et total, recalculés à chaque changement d'ordre ou de sens. Une liaison est toujours proposée : quand elle ne peut pas éviter toutes les spéciales (demi-tour au stop, traversée, portion empruntée), elle est en pointillés et le compromis est indiqué (⚠). Un badge « ES n » marque le départ de chaque spéciale.
+- Les tracés sont réalisables le même jour : ils ne se croisent pas, sont écartés d'au moins 500 m (250 m sur une petite zone) et aucun ne bloque l'accès au départ ou à l'arrivée d'un autre
 - Sens inverse en un clic, propre à chaque tracé : même tracé à l'envers, avec son propre roadbook, profil et point stop ; le sens choisi vaut aussi pour l'impression et les exports
 - Option **boucle**, deux types :
   - **carrefour** : on repasse une fois par un même carrefour, entouré sur la carte (badge « 2× ») ;
