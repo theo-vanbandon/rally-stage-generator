@@ -22,7 +22,7 @@ Rally Stage Generator génère des tracés de spéciales de rallye autour d'une 
 - 🏔️ Altitudes IGN intégrées et profil interactif
 - ⚡ Quelques secondes la première fois sur une zone, instantané ensuite (cache)
 - 🔗 Lien partageable qui reproduit exactement la même spéciale
-- 📤 Export GPX (altitudes + waypoints), KML et GeoJSON
+- 📤 Export GPX, KML et GeoJSON d'une ou plusieurs spéciales, dans le sens affiché, avec waypoints typés (départ, arrivée, point stop, carrefours de boucle avec leurs deux passages)
 
 ## 🏗️ Architecture
 
@@ -76,7 +76,7 @@ Ouvrir http://localhost:3000 dans votre navigateur.
 2. Régler la zone de recherche (5-20 km), le revêtement et la longueur
 3. Cliquer sur « Générer la spéciale », puis « Nouvelle spéciale » pour en obtenir d'autres
 4. Comparer les 3 tracés proposés, consulter le roadbook et le profil
-5. Exporter le tracé ou copier le lien
+5. Exporter les tracés choisis ou copier le lien
 
 ## 🛠️ Technologies utilisées
 

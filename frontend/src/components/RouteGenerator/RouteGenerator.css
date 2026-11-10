@@ -256,8 +256,67 @@ button.primary:disabled {
   cursor: pointer;
 }
 
-.export-buttons button:hover {
+.export-buttons button:hover:not(:disabled) {
   border-color: var(--accent);
+}
+
+.export-buttons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Choix des spéciales à exporter */
+.export-picks {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  border: none;
+}
+
+.export-picks legend {
+  margin-bottom: 0.3rem;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.export-picks label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.export-picks label.checked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.export-picks input {
+  accent-color: var(--accent);
+}
+
+.export-picks small {
+  grid-column: 2;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.export-hint {
+  margin: 0 0 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
 }
 
 .panel-footer {

@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import RouteGenerator from '../../components/RouteGenerator';
 import { generateStage } from '../../services/api';
+import { exportStages } from '../../services/exportService';
 import { mockStage } from '../fixtures/stage';
 
 // Leaflet ne fonctionne pas dans jsdom : la carte est remplacée, ses props sont gardées pour les tests
@@ -14,6 +15,10 @@ jest.mock('../../components/MapView', () => ({
     return <div data-testid="map" />;
   },
   SURFACE_STYLES: { paved: { color: 'red' }, gravel: { color: 'brown' }, dirt: { color: 'brown', dashArray: '7 6' } },
+}));
+jest.mock('../../services/exportService', () => ({
+  ...jest.requireActual('../../services/exportService'),
+  exportStages: jest.fn(() => true),
 }));
 jest.mock('../../services/api', () => ({
   generateStage: jest.fn(),
@@ -111,6 +116,54 @@ describe('RouteGenerator Component', () => {
     expect(lastMapProps().focusedCase).toEqual(expect.objectContaining({ n: mockStage.roadbook[2].n, fly: false }));
   });
 
+  describe('export', () => {
+    const exportButton = (name) => screen.getByRole('button', { name });
+
+    test('exporte par défaut le tracé affiché, dans son sens', async () => {
+      generateStage.mockResolvedValueOnce(response(['a', 'b', 'c']));
+      render(<RouteGenerator />);
+      await screen.findByText('Nouvelle spéciale');
+      fireEvent.click(screen.getByRole('tab', { name: /Tracé 2/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Inverser le sens/ }));
+
+      fireEvent.click(exportButton('GPX'));
+      const [format, items, , filename] = exportStages.mock.calls.at(-1);
+      expect(format).toBe('gpx');
+      expect(items).toHaveLength(1);
+      expect(items[0]).toEqual(expect.objectContaining({ label: 'Tracé 2', tag: 'T2', reversed: true }));
+      expect(items[0].stage.id).toBe('b-inverse');
+      expect(filename).toBe('es-laventie-b-inverse.gpx');
+    });
+
+    test('exporte plusieurs tracés, chacun dans son sens', async () => {
+      generateStage.mockResolvedValueOnce(response(['a', 'b', 'c']));
+      render(<RouteGenerator />);
+      await screen.findByText('Nouvelle spéciale');
+      fireEvent.click(screen.getByRole('button', { name: /Inverser le sens/ })); // tracé 1 à l'envers
+
+      const picks = screen.getByRole('group', { name: 'Spéciales à exporter' });
+      fireEvent.click(within(picks).getByLabelText(/Tracé 3/));
+      fireEvent.click(exportButton('KML'));
+
+      const [format, items, , filename] = exportStages.mock.calls.at(-1);
+      expect(format).toBe('kml');
+      expect(items.map((it) => [it.label, it.stage.id, it.reversed])).toEqual([
+        ['Tracé 1', 'a-inverse', true],
+        ['Tracé 3', 'c', false],
+      ]);
+      expect(filename).toBe('es-laventie-traces-1-3.kml');
+    });
+
+    test("désactive l'export quand aucune spéciale n'est cochée", async () => {
+      generateStage.mockResolvedValueOnce(response(['a', 'b']));
+      render(<RouteGenerator />);
+      await screen.findByText('Nouvelle spéciale');
+      fireEvent.click(within(screen.getByRole('group', { name: 'Spéciales à exporter' })).getByLabelText(/Tracé 1/));
+      expect(exportButton('GPX')).toBeDisabled();
+      expect(exportButton('GeoJSON')).toBeDisabled();
+    });
+  });
+
   describe('boucle', () => {
     const loopStage = (id, loop = { kind: 'junction', fromKm: 2.85, lengthKm: 3.32, coord: [2.8, 50.6] }) => ({
       ...withReverse(id),
@@ -164,22 +217,38 @@ describe('RouteGenerator Component', () => {
       fireEvent.click(screen.getByRole('button', { name: /Inverser le sens/ }));
       expect(screen.getByText(/Via Route du retour/)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /revenir au sens d'origine/ })).toHaveAttribute('aria-pressed', 'true');
-      expect(window.location.search).toContain('sens=inverse');
+      expect(window.location.search).toContain('sens=1');
 
       fireEvent.click(screen.getByRole('button', { name: /revenir au sens d'origine/ }));
       expect(screen.queryByText(/Route du retour/)).not.toBeInTheDocument();
       expect(window.location.search).not.toContain('sens=');
     });
 
-    test('le sens inverse suit le tracé sélectionné', async () => {
+    test('chaque tracé garde son propre sens', async () => {
       generateStage.mockResolvedValueOnce(response(['a', 'b']));
       render(<RouteGenerator />);
       await screen.findByText('Nouvelle spéciale');
 
       fireEvent.click(screen.getByRole('button', { name: /Inverser le sens/ }));
       fireEvent.click(screen.getByRole('tab', { name: /Tracé 2/ }));
-      expect(screen.getByText(/Via Route du retour/)).toBeInTheDocument();
+      // Le tracé 2 est dans son sens d'origine, le tracé 1 reste inversé
+      expect(screen.queryByText(/Via Route du retour/)).not.toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /Tracé 1/ })).toHaveTextContent('inverse');
       expect(window.location.search).toContain('t=2');
+      expect(window.location.search).toContain('sens=1');
+
+      fireEvent.click(screen.getByRole('tab', { name: /Tracé 1/ }));
+      expect(screen.getByText(/Via Route du retour/)).toBeInTheDocument();
+    });
+
+    test('un lien partagé rouvre le sens de chaque tracé', async () => {
+      window.history.replaceState(null, '', '/?name=Gap&cp=05000&lat=44.58&lon=6.06&r=12&s=asphalt&l=medium&seed=7&sens=1,3');
+      generateStage.mockResolvedValueOnce(response(['a', 'b', 'c']));
+      render(<RouteGenerator />);
+
+      expect(await screen.findByText(/Via Route du retour/)).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /Tracé 3/ })).toHaveTextContent('inverse');
+      expect(screen.getByRole('tab', { name: /Tracé 2/ })).not.toHaveTextContent('inverse');
     });
 
     test('un lien partagé rouvre le bon tracé dans le bon sens', async () => {

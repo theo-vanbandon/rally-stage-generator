@@ -7,7 +7,7 @@ Interface React du générateur de spéciales de rallye.
 - Recherche de commune avec autocomplétion (nom ou code postal, via geo.api.gouv.fr)
 - Choix de la zone (5–20 km), du revêtement (asphalte / terre / mixte) et de la longueur
 - 3 tracés proposés par génération, cliquables sur la carte. Ils sont réalisables le même jour : ils ne se croisent pas, sont écartés d'au moins 500 m (250 m sur une petite zone) et aucun ne bloque l'accès au départ ou à l'arrivée d'un autre
-- Sens inverse en un clic : même tracé à l'envers, avec son propre roadbook, profil et point stop
+- Sens inverse en un clic, propre à chaque tracé : même tracé à l'envers, avec son propre roadbook, profil et point stop ; le sens choisi vaut aussi pour l'impression et les exports
 - Option **boucle**, deux types :
   - **carrefour** : on repasse une fois par un même carrefour, entouré sur la carte (badge « 2× ») ;
   - **portion commune** : un tronçon est parcouru deux fois dans le même sens ; il est surligné en bleu, avec un badge « 2× ».
@@ -20,9 +20,14 @@ Interface React du générateur de spéciales de rallye.
 - Profil d'altitude interactif (le survol positionne un repère sur la carte)
 - Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case, dont le point grossit (avec une onde) et affiche son étiquette ; à l'inverse, cliquer un point de la carte surligne sa case dans le roadbook
 - Impression du roadbook en A5 ou A4 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
-- Export **GPX** (avec altitudes et waypoints PK), **KML** (3D) et **GeoJSON**
+- Export **GPX**, **KML** et **GeoJSON** :
+  - on coche les tracés à exporter (le tracé affiché par défaut, jusqu'aux 3), chacun dans son sens ; KML et GeoJSON : un seul fichier ; GPX : un fichier par spéciale, regroupés dans une archive `.zip` s'il y en a plusieurs ;
+  - waypoints : départ, arrivée, point stop, et un waypoint par carrefour de boucle, qui décrit ses deux passages (« 1er passage, km 2.85 : à gauche vers R DES FRENES (entrée dans la boucle) », puis le 2e) ;
+  - GPX : une seule trace par fichier, avec altitudes, sans liaison. Chaque lecteur (gpx.studio, Garmin, Strava…) marque le départ et l'arrivée à sa façon, souvent une seule fois par fichier : avec une spéciale par fichier, ces marques tombent toujours sur le vrai départ et la vraie arrivée ; symboles Garmin (drapeaux vert, rouge, bleu) et « Crossing » pour les boucles, que gpx.studio affiche ;
+  - KML : un dossier et une couleur par spéciale, la liaison vers le point stop, des icônes Google Earth, les données de chaque point ;
+  - GeoJSON : propriétés détaillées et styles simplestyle (couleurs de traces et de marqueurs, pour geojson.io, uMap ou GitHub).
 - Mentions légales (éditeur, hébergeur, sources des données, avertissement, données personnelles), accessibles depuis le pied de page ou par l'adresse `#mentions-legales`
-- Lien partageable : l'URL contient la zone, les options (dont `b=1` boucle par un carrefour, `b=2` portion commune), la graine, le tracé affiché et le sens, et régénère exactement la même spéciale
+- Lien partageable : l'URL contient la zone, les options (dont `b=1` boucle par un carrefour, `b=2` portion commune), la graine, le tracé affiché et les tracés inversés (`sens=1,3`), et régénère exactement la même spéciale
 
 ## 🏗️ Structure
 ```

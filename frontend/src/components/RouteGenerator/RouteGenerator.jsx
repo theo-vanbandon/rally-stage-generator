@@ -8,7 +8,7 @@ import Roadbook from "../Roadbook";
 import RoadbookPrint, { PRINT_FORMATS } from "../RoadbookPrint";
 import LegalNotice from "../LegalNotice";
 import { generateStage, pingBackend } from "../../services/api";
-import { exportGeoJSON, exportKML, exportGPX, stageFilename } from "../../services/exportService";
+import { exportStages, exportFilename } from "../../services/exportService";
 import { cumulativeDistances, pointAtKm } from "../../utils/geometry";
 import "./RouteGenerator.css";
 
@@ -75,16 +75,26 @@ function readUrlParams() {
     seed: Number.isInteger(seed) ? seed : undefined,
     avoid: q.get("vu") ? q.get("vu").split(",").filter(Boolean) : [],
     trace: Math.max(0, (Number.parseInt(q.get("t"), 10) || 1) - 1),
-    reversed: q.get("sens") === "inverse",
+    reversedTraces: readReversed(q.get("sens"), Math.max(0, (Number.parseInt(q.get("t"), 10) || 1) - 1)),
   };
 }
 
-/** Tracé affiché et sens de parcours, ajoutés au lien partagé */
-function writeViewParams({ trace, reversed }) {
+/**
+ * Tracés affichés en sens inverse, dans le lien : sens=1,3 (numéros des tracés). L'ancien « sens=inverse »
+ * désignait le tracé affiché.
+ */
+function readReversed(value, trace) {
+  if (!value) return [];
+  if (value === "inverse") return [trace];
+  return [...new Set(value.split(",").map((n) => Number.parseInt(n, 10) - 1))].filter((i) => i >= 0).sort((a, b) => a - b);
+}
+
+/** Tracé affiché et tracés en sens inverse, ajoutés au lien partagé */
+function writeViewParams({ trace, reversedTraces }) {
   const q = new URLSearchParams(window.location.search);
   if (trace > 0) q.set("t", String(trace + 1));
   else q.delete("t");
-  if (reversed) q.set("sens", "inverse");
+  if (reversedTraces.length) q.set("sens", reversedTraces.map((i) => i + 1).join(","));
   else q.delete("sens");
   window.history.replaceState(null, "", `?${q}`);
 }
@@ -136,7 +146,8 @@ export default function RouteGenerator() {
 
   const [result, setResult] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [reversed, setReversed] = useState(false);
+  // Sens de chaque tracé : indices des tracés affichés (et exportés, imprimés) en sens inverse
+  const [reversedTraces, setReversedTraces] = useState([]);
   const [loading, setLoading] = useState(false);
   const [slow, setSlow] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -147,6 +158,8 @@ export default function RouteGenerator() {
   const [esNumber, setEsNumber] = useState("1");
   const [esName, setEsName] = useState("");
   const [printFormat, setPrintFormat] = useState("a5");
+  // Spéciales à exporter : null = le tracé affiché ; sinon les indices cochés
+  const [exportPick, setExportPick] = useState(null);
   // Mentions légales : aussi accessibles directement par l'adresse …#mentions-legales
   const [legalOpen, setLegalOpen] = useState(() => window.location.hash === LEGAL_HASH);
 
@@ -163,25 +176,32 @@ export default function RouteGenerator() {
   };
   const abortRef = useRef(null);
   // Lien partagé : tracé et sens à réafficher après la première génération
-  const pendingView = useRef(initial ? { trace: initial.trace, reversed: initial.reversed } : null);
+  const pendingView = useRef(initial ? { trace: initial.trace, reversedTraces: initial.reversedTraces } : null);
   // Tracés déjà proposés pour la recherche en cours (réinitialisé si un paramètre change)
   const seenRef = useRef(initial ? { key: searchKey(initial), ids: initial.avoid } : { key: "", ids: [] });
 
   const stages = useMemo(() => (result ? [result.stage, ...result.alternatives] : []), [result]);
-  // Le tracé sélectionné peut être affiché dans l'autre sens (calculé par le serveur avec son propre roadbook)
+  // Chaque tracé garde son sens : à l'envers, il est remplacé par sa version inverse (calculée par le serveur,
+  // avec son propre roadbook), pour l'affichage comme pour l'impression et les exports
   const displayedStages = useMemo(
-    () => stages.map((s, i) => (i === selectedIndex && reversed && s.reverse ? s.reverse : s)),
-    [stages, selectedIndex, reversed]
+    () => stages.map((s, i) => (reversedTraces.includes(i) && s.reverse ? s.reverse : s)),
+    [stages, reversedTraces]
   );
   const stage = displayedStages[selectedIndex];
+  const reversed = reversedTraces.includes(selectedIndex);
 
-  const showView = (trace, isReversed) => {
+  const showView = useCallback((trace, traces) => {
     setSelectedIndex(trace);
-    setReversed(isReversed);
+    setReversedTraces(traces);
     setHoverKm(null);
     setFocusedCase(null);
-    writeViewParams({ trace, reversed: isReversed });
-  };
+    writeViewParams({ trace, reversedTraces: traces });
+  }, []);
+  const toggleReversed = () =>
+    showView(
+      selectedIndex,
+      reversed ? reversedTraces.filter((i) => i !== selectedIndex) : [...reversedTraces, selectedIndex].sort((a, b) => a - b)
+    );
 
   const cumulative = useMemo(() => (stage ? cumulativeDistances(stage.geometry.coordinates) : []), [stage]);
   const hoverPoint = stage && hoverKm !== null ? pointAtKm(stage.geometry.coordinates, cumulative, hoverKm) : null;
@@ -221,10 +241,13 @@ export default function RouteGenerator() {
         seenRef.current = { key: usedKey, ids: [...previous.filter((id) => !shownIds.includes(id)), ...shownIds].slice(-MAX_SEEN) };
         if (data.radiusKm !== radiusKm) setRadiusKm(data.radiusKm);
         setResult(data);
+        setExportPick(null);
         writeUrlParams({ commune, radiusKm: data.radiusKm, surface, length, loop, seed: data.seed, avoid: previous });
-        const view = pendingView.current ?? { trace: 0, reversed: false };
+        // Nouvelle génération : premier tracé, tous dans le sens d'origine (sauf lien partagé)
+        const view = pendingView.current ?? { trace: 0, reversedTraces: [] };
         pendingView.current = null;
-        showView(Math.min(view.trace, data.alternatives.length), view.reversed);
+        const count = data.alternatives.length + 1;
+        showView(Math.min(view.trace, count - 1), view.reversedTraces.filter((i) => i < count));
       } catch (err) {
         if (err.name !== "AbortError") setErrorMsg(err.message || "Erreur inconnue");
       } finally {
@@ -232,7 +255,7 @@ export default function RouteGenerator() {
         if (abortRef.current === controller) setLoading(false);
       }
     },
-    [commune, radiusKm, surface, length, loop]
+    [commune, radiusKm, surface, length, loop, showView]
   );
 
   // Lien partagé : on régénère la spéciale à l'identique au chargement
@@ -254,7 +277,25 @@ export default function RouteGenerator() {
     }
   };
 
-  const filename = (ext) => stageFilename(stage, commune?.name, ext);
+  const picked = (exportPick ?? [selectedIndex]).filter((i) => i < stages.length);
+  const togglePick = (i) => {
+    const base = exportPick ?? [selectedIndex];
+    setExportPick((base.includes(i) ? base.filter((x) => x !== i) : [...base, i]).sort((a, b) => a - b));
+  };
+  // Chaque spéciale est exportée dans le sens affiché
+  const exportItems = picked.map((i) => ({
+    stage: displayedStages[i],
+    label: `Tracé ${i + 1}`,
+    tag: `T${i + 1}`,
+    reversed: reversedTraces.includes(i),
+  }));
+  const runExport = (format) =>
+    exportStages(
+      format,
+      exportItems,
+      { title: [commune?.name, ...exportItems.map((it) => it.label)].filter(Boolean).join(" — "), placeName: commune?.name },
+      exportFilename(exportItems, commune?.name, format)
+    );
 
   return (
     <>
@@ -337,10 +378,12 @@ export default function RouteGenerator() {
                       role="tab"
                       aria-selected={i === selectedIndex}
                       className={i === selectedIndex ? "selected" : ""}
-                      onClick={() => showView(i, reversed)}
+                      onClick={() => showView(i, reversedTraces)}
                     >
                       <strong>Tracé {i + 1}</strong>
-                      <small>{s.stats.lengthKm.toFixed(1)} km</small>
+                      <small>
+                        {s.stats.lengthKm.toFixed(1)} km{reversedTraces.includes(i) ? " · inverse" : ""}
+                      </small>
                     </button>
                   ))}
                 </div>
@@ -350,7 +393,7 @@ export default function RouteGenerator() {
                 type="button"
                 className={`reverse-toggle${reversed ? " active" : ""}`}
                 aria-pressed={reversed}
-                onClick={() => showView(selectedIndex, !reversed)}
+                onClick={toggleReversed}
               >
                 <span aria-hidden="true">⇄</span> {reversed ? "Sens inverse affiché — revenir au sens d'origine" : "Inverser le sens"}
               </button>
@@ -430,10 +473,35 @@ export default function RouteGenerator() {
 
               <div className="block">
                 <h2>Exporter</h2>
+                {stages.length > 1 && (
+                  <fieldset className="export-picks">
+                    <legend>Spéciales à exporter</legend>
+                    {stages.map((s, i) => (
+                      <label key={s.id} className={picked.includes(i) ? "checked" : ""}>
+                        <input type="checkbox" checked={picked.includes(i)} onChange={() => togglePick(i)} />
+                        <span>Tracé {i + 1}</span>
+                        <small>
+                          {displayedStages[i].stats.lengthKm.toFixed(1)} km
+                          {reversedTraces.includes(i) ? " · inverse" : ""}
+                        </small>
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+                <p className="export-hint">
+                  Waypoints : départ, arrivée, point stop et carrefours de boucle.
+                  {picked.length > 1 && " En GPX, un fichier par spéciale (archive .zip), lu correctement par tous les GPS et applis."}
+                </p>
                 <div className="export-buttons">
-                  <button type="button" onClick={() => exportGPX(stage, filename("gpx"))}>GPX</button>
-                  <button type="button" onClick={() => exportKML(stage, filename("kml"))}>KML</button>
-                  <button type="button" onClick={() => exportGeoJSON(stage, filename("geojson"))}>GeoJSON</button>
+                  {[
+                    ["gpx", "GPX"],
+                    ["kml", "KML"],
+                    ["geojson", "GeoJSON"],
+                  ].map(([format, label]) => (
+                    <button key={format} type="button" disabled={picked.length === 0} onClick={() => runExport(format)}>
+                      {label}
+                    </button>
+                  ))}
                   <button type="button" onClick={copyLink}>{copied ? "Lien copié ✓" : "Copier le lien"}</button>
                 </div>
               </div>
@@ -459,7 +527,7 @@ export default function RouteGenerator() {
           <MapView
             stages={displayedStages}
             selectedIndex={selectedIndex}
-            onSelect={(i) => showView(i, reversed)}
+            onSelect={(i) => showView(i, reversedTraces)}
             searchArea={commune ? { lat: commune.lat, lon: commune.lon, radiusKm } : null}
             hoverPoint={hoverPoint}
             focusedCase={focusedCase}
