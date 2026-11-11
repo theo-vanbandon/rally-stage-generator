@@ -9,6 +9,7 @@ const { fetchRoads } = require("../services/bdtopo");
 const { buildNetwork } = require("../services/roadNetwork");
 const { generateStages, SURFACE_MODES, LENGTH_PRESETS } = require("../services/stageGenerator");
 const { TtlCache, DEFAULT_DISK_DIR } = require("../services/cache");
+const { memoryLabel } = require("../utils/memory");
 
 const MIN_RADIUS_KM = 3;
 const MAX_RADIUS_KM = 20;
@@ -28,12 +29,22 @@ const roadsCache = new TtlCache({
 });
 const pruneCache = () => {
   const { removed, totalBytes } = roadsCache.pruneDisk();
-  if (removed) console.log(`🧹 Cache : ${removed} fichier(s) supprimé(s), ${(totalBytes / 1e6).toFixed(1)} Mo conservés`);
+  if (removed) {
+    console.log(`🧹 Cache : ${removed} fichier(s) supprimé(s), ${(totalBytes / 1e6).toFixed(1)} Mo conservés | ${memoryLabel()}`);
+  }
 };
 pruneCache();
 setInterval(pruneCache, 6 * HOUR).unref();
-// Graphes construits : mémoire seule
-const networkCache = new TtlCache({ maxEntries: 4, ttlMs: 2 * HOUR });
+// Graphes construits : mémoire seule, plafonnée en taille (hébergement à 512 Mo). Un graphe pèse environ 2 Ko par
+// tronçon IGN (mesuré : 25 Mo pour Laventie à 10 km, 85 Mo pour une zone élargie à 20 km) ; au-delà du plafond,
+// les zones les moins récemment utilisées sont libérées.
+const NETWORK_BYTES_PER_SEGMENT = 2000;
+const networkCache = new TtlCache({
+  maxEntries: 4,
+  ttlMs: 2 * HOUR,
+  maxWeight: (Number(process.env.NETWORK_CACHE_MB) || 160) * 1e6,
+  weigh: (network) => (network.segmentsCount ?? 0) * NETWORK_BYTES_PER_SEGMENT,
+});
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -100,6 +111,8 @@ async function loadNetwork(center, radiusKm, timings) {
   let t = Date.now();
   let dataSource = "memory";
   const { value: network } = await networkCache.getOrCompute(key, async () => {
+    // Nouvelle zone : on fait de la place avant le pic mémoire de la construction (tronçons bruts + graphe)
+    networkCache.shrinkTo(networkCache.maxWeight / 2);
     // Les échecs ne sont jamais mis en cache : un résultat vide lève une erreur plutôt que d'être stocké
     const { value: segments, source } = await roadsCache.getOrCompute(
       key,
@@ -113,11 +126,13 @@ async function loadNetwork(center, radiusKm, timings) {
     dataSource = source;
     timings.dataMs = Date.now() - t;
     t = Date.now();
-    const built = buildNetwork(segments, { lat, lon });
+    const segmentsCount = segments.length;
+    // Les tronçons bruts ne servent qu'ici (le cache disque les garde) : libérés au fil de la construction
+    const built = buildNetwork(segments, { lat, lon }, { consume: true });
     if (built.edges.length === 0) {
       throw new HttpError(404, "Aucune route hors ville trouvée dans ce rayon.");
     }
-    built.segmentsCount = segments.length;
+    built.segmentsCount = segmentsCount;
     timings.buildMs = Date.now() - t;
     return built;
   });
@@ -189,7 +204,7 @@ router.post("/", async (req, res) => {
     const [stage, ...alternatives] = result.stages;
     console.log(
       `🏁 ${center.name || `${center.lat},${center.lon}`} r=${radiusKm}km ${params.surface}/${params.length} ` +
-        `seed=${params.seed} → ${stage.stats.lengthKm} km (${dataSource}, ${timings.totalMs} ms)`
+        `seed=${params.seed} → ${stage.stats.lengthKm} km (${dataSource}, ${timings.totalMs} ms) | ${memoryLabel()}`
     );
 
     return res.json({
@@ -216,7 +231,7 @@ router.post("/", async (req, res) => {
     });
   } catch (err) {
     const status = err.status || (err.message?.startsWith("Service IGN") ? 502 : 500);
-    console.error(`❌ ${status} ${err.message}`);
+    console.error(`❌ ${status} ${err.message} | ${memoryLabel()}`);
     return res.status(status).json({ ok: false, error: err.message || String(err) });
   }
 });

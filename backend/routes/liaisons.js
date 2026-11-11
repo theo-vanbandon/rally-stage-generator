@@ -10,6 +10,7 @@ const router = express.Router();
 
 const { loadNetwork, HttpError, RADIUS_KM, searchRadii } = require("./generate");
 const { computeLiaisons, CLEAN_TIERS } = require("../services/liaisons");
+const { memoryLabel } = require("../utils/memory");
 
 const MAX_STAGES = 6;
 const isCoord = (c) => Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1]);
@@ -62,10 +63,12 @@ router.post("/", async (req, res) => {
     if (failed().size) {
       for (const l of computeLiaisons(network, stages, { only: failed() })) liaisons[l.from] = l;
     }
+    const summary = liaisons.map((l) => (l.ok ? `${l.km} km${l.tier > 1 ? " ⚠" : ""}${l.expandedKm ? " (zone élargie)" : ""}` : "impossible"));
+    console.log(`🔗 Liaisons ${stages.length} ES → ${summary.join(", ")} (${Date.now() - t} ms) | ${memoryLabel()}`);
     return res.json({ ok: true, liaisons, meta: { computeMs: Date.now() - t } });
   } catch (err) {
     const status = err.status || (err.message?.startsWith("Service IGN") ? 502 : 500);
-    console.error(`❌ liaisons ${status} ${err.message}`);
+    console.error(`❌ liaisons ${status} ${err.message} | ${memoryLabel()}`);
     return res.status(status).json({ ok: false, error: err.message || String(err) });
   }
 });

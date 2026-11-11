@@ -16,7 +16,9 @@ const PAGE_SIZE = 5000;
 const MAX_PARALLEL = 6;
 const TIMEOUT_MS = 30000;
 const RETRIES = 3;
-const MAX_SEGMENTS = 150000; // ~Paris intra-muros + petite couronne à 10 km
+// Au-delà, la zone ne tient pas dans la mémoire d'un petit serveur (512 Mo) : refusée proprement (« zone trop dense »)
+// plutôt que de faire planter le serveur. 110 000 laisse passer Laventie à 20 km (102 000) ou Toulouse à 10 km (89 000).
+const MAX_SEGMENTS = Number(process.env.MAX_SEGMENTS) || 110000;
 
 // Natures récupérées : routes exploitables + réseau principal (intersections et liaisons vers l'extérieur)
 const NATURES = [

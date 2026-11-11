@@ -137,14 +137,28 @@ function measureShape(coords2d) {
 function dropDenseUrbanAreas(segments, projection) {
   const urban = segments.filter((s) => s.urban);
   const grid = new Map();
-  const cellKey = (x, y) => `${Math.floor(x / DENSITY_CELL_KM)},${Math.floor(y / DENSITY_CELL_KM)}`;
+  // Clé numérique de cellule (une chaîne par point coûtait cher en mémoire sur les grandes zones)
+  const cellKey = (x, y) => Math.floor(x / DENSITY_CELL_KM) * 1e6 + Math.floor(y / DENSITY_CELL_KM);
 
-  const urbanSamples = urban.map((s) => resample(s.coords.map((c) => [c[0], c[1]]), DENSITY_STEP_KM).map(projection.toXY));
-  for (const samples of urbanSamples) {
-    for (const [x, y] of samples) grid.set(cellKey(x, y), (grid.get(cellKey(x, y)) || 0) + DENSITY_STEP_KM);
+  // Échantillons de chaque rue urbaine, à plat (x, y, x, y…) : des centaines de milliers de petits tableaux sinon
+  const urbanSamples = urban.map((s) => {
+    const pts = resample(s.coords.map((c) => [c[0], c[1]]), DENSITY_STEP_KM);
+    const flat = new Float64Array(pts.length * 2);
+    pts.forEach((p, i) => {
+      const [x, y] = projection.toXY(p);
+      flat[2 * i] = x;
+      flat[2 * i + 1] = y;
+    });
+    return flat;
+  });
+  for (const flat of urbanSamples) {
+    for (let i = 0; i < flat.length; i += 2) {
+      const key = cellKey(flat[i], flat[i + 1]);
+      grid.set(key, (grid.get(key) || 0) + DENSITY_STEP_KM);
+    }
   }
 
-  const densityAt = ([x, y]) => {
+  const densityAt = (x, y) => {
     let total = 0;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) total += grid.get(cellKey(x + dx * DENSITY_CELL_KM, y + dy * DENSITY_CELL_KM)) || 0;
@@ -155,7 +169,10 @@ function dropDenseUrbanAreas(segments, projection) {
   // Densité médiane le long du tronçon : une route de campagne qui touche le bord d'un bourg reste utilisable
   const dense = new Set();
   urban.forEach((s, i) => {
-    const densities = urbanSamples[i].map(densityAt).sort((a, b) => a - b);
+    const flat = urbanSamples[i];
+    const densities = new Float64Array(flat.length / 2);
+    for (let k = 0; k < densities.length; k++) densities[k] = densityAt(flat[2 * k], flat[2 * k + 1]);
+    densities.sort();
     if (densities[Math.floor((densities.length - 1) / 2)] >= DENSE_URBAN_KM) dense.add(s);
   });
   return segments.filter((s) => !dense.has(s));
@@ -225,6 +242,48 @@ function isLinkRoad(seg) {
 }
 
 /**
+ * Tronçon de spéciale. Sa géométrie est stockée à plat (Float64Array lon, lat : mêmes valeurs exactes, une
+ * fraction de la mémoire de centaines de milliers de petits tableaux) et relue à la demande sous la forme
+ * habituelle [[lon, lat], …] via `coords`.
+ */
+class Edge {
+  constructor(fields, coords2d) {
+    Object.assign(this, fields);
+    const flat = new Float64Array(coords2d.length * 2);
+    coords2d.forEach(([lon, lat], i) => {
+      flat[2 * i] = lon;
+      flat[2 * i + 1] = lat;
+    });
+    this.flat = flat;
+  }
+
+  get coords() {
+    const { flat } = this;
+    const out = new Array(flat.length / 2);
+    for (let i = 0; i < out.length; i++) out[i] = [flat[2 * i], flat[2 * i + 1]];
+    return out;
+  }
+}
+
+/**
+ * Branche d'un carrefour (pour les tulipes). Toutes les formes sont rangées dans un seul Int16Array partagé :
+ * un tableau typé par branche coûtait plus en en-têtes qu'en données. `shape` en est une vue, créée à la demande.
+ */
+class Branch {
+  constructor(seg, kind, store, offset, length) {
+    this.seg = seg;
+    this.kind = kind;
+    this.store = store;
+    this.offset = offset;
+    this.length = length;
+  }
+
+  get shape() {
+    return this.store.subarray(this.offset, this.offset + this.length);
+  }
+}
+
+/**
  * Construit le graphe à partir des tronçons compacts de la BD TOPO
  *
  * - edges : tronçons utilisables en spéciale (hors villes et centres-bourgs)
@@ -236,8 +295,11 @@ function isLinkRoad(seg) {
  *
  * @param {Array} segments - Tronçons (voir bdtopo.compactSegment)
  * @param {{lat: number, lon: number}} center - Origine de la projection locale
+ * @param {{consume?: boolean}} [options] - consume : libère chaque tronçon brut (segments[i] = null) dès qu'il est
+ *   traité. Le pic mémoire devient alors « le plus gros des deux » (bruts ou réseau) plutôt que leur somme : c'est ce
+ *   qui permet de construire les grandes zones (100 000 tronçons) sur un serveur à 512 Mo.
  */
-function buildNetwork(segments, center) {
+function buildNetwork(segments, center, { consume = false } = {}) {
   const projection = createProjection(center.lat, center.lon);
   const nodeIndex = new Map();
   const nodes = [];
@@ -248,7 +310,13 @@ function buildNetwork(segments, center) {
   const linkKm = [];
   const linkSpeed = [];
   const linkOneWays = [];
-  const stageSegments = new Set(dropDenseUrbanAreas(segments, projection));
+  // Indices des tronçons gardés pour les spéciales (des indices et non les objets : ils peuvent ainsi être libérés)
+  const kept = new Set(dropDenseUrbanAreas(segments, projection));
+  const stageIndex = new Uint8Array(segments.length);
+  segments.forEach((seg, i) => {
+    if (kept.has(seg)) stageIndex[i] = 1;
+  });
+  kept.clear();
 
   const nodeOf = (c) => {
     const key = `${c[0]},${c[1]}`;
@@ -262,7 +330,27 @@ function buildNetwork(segments, center) {
   };
 
   const linkSeg = [];
+  // Formes des branches, écrites directement dans un tableau partagé qui grandit au besoin (voir Branch) ;
+  // les branches elles-mêmes sont créées à la fin, quand le tableau a sa taille définitive
+  let shapeStore = new Int16Array(1 << 16);
+  let shapeUsed = 0;
+  const pending = { node: [], seg: [], kind: [], offset: [], length: [] };
+  const addBranch = (node, segIndex, kind, shape) => {
+    if (shapeUsed + shape.length > shapeStore.length) {
+      const bigger = new Int16Array(Math.max(shapeStore.length * 2, shapeUsed + shape.length));
+      bigger.set(shapeStore.subarray(0, shapeUsed));
+      shapeStore = bigger;
+    }
+    shapeStore.set(shape, shapeUsed);
+    pending.node.push(node);
+    pending.seg.push(segIndex);
+    pending.kind.push(kind);
+    pending.offset.push(shapeUsed);
+    pending.length.push(shape.length);
+    shapeUsed += shape.length;
+  };
   segments.forEach((seg, segIndex) => {
+    if (consume) segments[segIndex] = null; // la boucle garde `seg` jusqu'à la fin de ce tour, puis il est libérable
     const a = nodeOf(seg.coords[0]);
     const b = nodeOf(seg.coords[seg.coords.length - 1]);
     // Intersections du roadbook : on ne compte que les vraies routes, pas les chemins de terre
@@ -274,8 +362,8 @@ function buildNetwork(segments, center) {
 
     // Branches du carrefour pour les tulipes du roadbook : tronçon d'origine, gabarit et forme
     const kind = branchKind(seg);
-    nodes[a].branches.push({ seg: segIndex, kind, shape: branchShape(seg.coords, projection) });
-    nodes[b].branches.push({ seg: segIndex, kind, shape: branchShape([...seg.coords].reverse(), projection) });
+    addBranch(a, segIndex, kind, branchShape(seg.coords, projection));
+    addBranch(b, segIndex, kind, branchShape([...seg.coords].reverse(), projection));
 
     if (isLinkRoad(seg)) {
       const linkId = linkGeometries.length;
@@ -290,13 +378,13 @@ function buildNetwork(segments, center) {
       nodes[b].links.push(a);
       nodes[b].linkIds.push(linkId);
       // Un grand axe ou une agglomération mène forcément ailleurs
-      if (seg.importance <= ANCHOR_IMPORTANCE || !stageSegments.has(seg)) {
+      if (seg.importance <= ANCHOR_IMPORTANCE || !stageIndex[segIndex]) {
         nodes[a].anchor = true;
         nodes[b].anchor = true;
       }
     }
 
-    if (!stageSegments.has(seg) || !isDrivable(seg)) return;
+    if (!stageIndex[segIndex] || !isDrivable(seg)) return;
 
     const coords2d = seg.coords.map((c) => [c[0], c[1]]);
     const shape = measureShape(coords2d);
@@ -306,31 +394,39 @@ function buildNetwork(segments, center) {
     const samples = [];
     for (let i = 0; i < shape.pts.length; i += SAMPLE_EVERY) samples.push(...projection.toXY(shape.pts[i]));
 
-    const edge = {
-      id: edges.length,
-      seg: segIndex,
-      a,
-      b,
-      coords: coords2d,
-      z: fillElevations(seg.coords),
-      lengthKm,
-      twistDeg: shape.twistDeg,
-      straightKm: shape.straightKm,
-      longestStraightKm: shape.longestStraightKm,
-      headStart: shape.headStart,
-      headEnd: shape.headEnd,
-      samples: Float64Array.from(samples),
-      surface: surfaceOf(seg),
-      basePref: basePreference(seg),
-      ref: seg.ref,
-      name: seg.name,
-      importance: seg.importance,
-      urban: seg.urban === true,
-    };
+    const edge = new Edge(
+      {
+        id: edges.length,
+        seg: segIndex,
+        a,
+        b,
+        z: fillElevations(seg.coords),
+        lengthKm,
+        twistDeg: shape.twistDeg,
+        straightKm: shape.straightKm,
+        longestStraightKm: shape.longestStraightKm,
+        headStart: shape.headStart,
+        headEnd: shape.headEnd,
+        samples: Float64Array.from(samples),
+        surface: surfaceOf(seg),
+        basePref: basePreference(seg),
+        ref: seg.ref,
+        name: seg.name,
+        importance: seg.importance,
+        urban: seg.urban === true,
+      },
+      coords2d
+    );
     edges.push(edge);
     nodes[a].edges.push(edge.id);
     nodes[b].edges.push(edge.id);
   });
+
+  const store = shapeStore.slice(0, shapeUsed); // taille exacte
+  shapeStore = null;
+  for (let i = 0; i < pending.node.length; i++) {
+    nodes[pending.node[i]].branches.push(new Branch(pending.seg[i], pending.kind[i], store, pending.offset[i], pending.length[i]));
+  }
 
   markBorderAnchors(nodes, projection);
   return {

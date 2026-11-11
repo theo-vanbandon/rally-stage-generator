@@ -27,7 +27,8 @@ describe('Generate Routes', () => {
     // Nouveau centre à chaque test pour ne pas réutiliser le cache du test précédent
     lat += 0.1;
     geocode.mockResolvedValue({ lat, lon: CENTER.lon, name: 'Gap', population: 41000 });
-    fetchRoads.mockResolvedValue(gridSegments({ size: 7 }));
+    // Un tableau neuf à chaque appel, comme le vrai service : la construction du graphe le consomme
+    fetchRoads.mockImplementation(async () => gridSegments({ size: 7 }));
   });
 
   describe('parseRequest', () => {
@@ -140,7 +141,7 @@ describe('Generate Routes', () => {
 
     test('devrait générer une spéciale avec boucle sur demande', async () => {
       // Pâtés de ~4 km de tour : de quoi faire une boucle
-      fetchRoads.mockResolvedValue(gridSegments({ size: 9, step: 0.007, amplitude: 0.0006 }));
+      fetchRoads.mockImplementation(async () => gridSegments({ size: 9, step: 0.007, amplitude: 0.0006 }));
       const response = await request(app).post('/api/generate').send({ place: 'Laventie', seed: 3, loop: true });
 
       expect(response.status).toBe(200);

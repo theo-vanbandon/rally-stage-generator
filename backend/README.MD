@@ -43,7 +43,17 @@ La **graine** (`seed`) rend la génération reproductible : même zone + mêmes 
 | Construction du graphe | 0,3 à 1 s | cache |
 | Génération | 0,1 à 0,4 s | 0,1 à 0,4 s |
 
-- Graphes construits gardés en mémoire (4 zones, 2 h).
+- Graphes construits gardés en mémoire (2 h, 4 zones au plus), plafonnés en taille (`NETWORK_CACHE_MB`) : au-delà, les zones les moins récemment utilisées sont libérées, et le cache se réduit de moitié avant chaque nouvelle construction.
+
+### Mémoire (hébergement à 512 Mo)
+
+Le serveur tient sur une petite instance (Render gratuit, 512 Mo) :
+
+- **Graphe compact** : la géométrie des tronçons est stockée à plat (`Float64Array`, valeurs identiques au bit près) et les formes des branches de carrefours dans un seul `Int16Array` partagé ; `coords` et `shape` sont relus à la demande. Environ un tiers de mémoire en moins (Gap 12 km : 59 → 39 Mo ; zone de 20 km : 131 → 84 Mo), résultats strictement identiques.
+- **Tronçons bruts libérés pendant la construction** (`buildNetwork(…, { consume: true })`) : le pic devient « le plus gros des deux » plutôt que leur somme. Laventie à 20 km (102 000 tronçons) se construit dans un tas de 256 Mo (plus de 320 Mo avant).
+- **Tas Node limité** (`npm start`) : 384 Mo pour l'ancienne génération (`--max-old-space-size`) et 16 Mo par demi-espace pour la jeune (`--max-semi-space-size`), soit 453 Mo au total. Sans ce second réglage, Node 24 réserve ~220 Mo de plus à la jeune génération et la limite totale atteint 604 Mo, au-delà des 512 Mo de l'hébergeur. Le ramasse-miettes travaille ainsi avant que le processus n'approche la limite, sans ralentir les calculs (Laventie 20 km : RAM 442 → 281 Mo).
+- **RAM affichée dans chaque ligne de la console** (génération, liaisons, eau, erreurs) : `RAM 267 Mo · tas 99/453 Mo`.
+- Mesuré sur le vrai serveur ainsi limité, en enchaînant Laventie 20 km, Gap, Mende, Lyon, une boucle, des liaisons sur zone élargie et la vigilance eau : pic du processus ~460 Mo, temps de calcul inchangés.
 - Tronçons bruts gardés **sur disque** (7 jours, gzip) dans `CACHE_DIR` : survivent à un redémarrage.
 - Le dossier se nettoie seul (au démarrage, après chaque nouvelle zone et toutes les 6 h) : fichiers expirés ou d'une ancienne version supprimés, puis les zones les plus anciennes au-delà de `CACHE_MAX_MB`.
 - Deux demandes simultanées sur la même zone ne déclenchent qu'un seul téléchargement.
@@ -77,6 +87,8 @@ backend/
 | `PORT` | 4000 | Port du serveur |
 | `CACHE_DIR` | `<tmp>/rally-stage-generator-cache` | Dossier du cache disque |
 | `CACHE_MAX_MB` | 300 | Taille max du cache disque |
+| `NETWORK_CACHE_MB` | 160 | Mémoire max des graphes gardés en mémoire (estimée à ~2 Ko par tronçon IGN) |
+| `MAX_SEGMENTS` | 110000 | Taille max d'une zone en tronçons IGN ; au-delà : « zone trop dense » (422) plutôt qu'un manque de mémoire |
 
 ## 🏃 Démarrage
 ```bash

@@ -27,6 +27,35 @@ describe('TtlCache', () => {
     expect(cache.get('b')).toBeUndefined();
   });
 
+  test('devrait libérer les entrées les plus anciennes au-delà du poids maximal', () => {
+    const cache = new TtlCache({ maxEntries: 10, ttlMs: 60000, maxWeight: 100, weigh: (v) => v.size });
+    cache.set('a', { size: 40 });
+    cache.set('b', { size: 40 });
+    cache.get('a'); // a redevient la plus récente
+    cache.set('c', { size: 40 }); // 120 > 100 : b, la moins récemment utilisée, part
+    expect(cache.get('b')).toBeUndefined();
+    expect(cache.get('a')).toEqual({ size: 40 });
+    expect(cache.get('c')).toEqual({ size: 40 });
+    expect(cache.totalWeight()).toBe(80);
+  });
+
+  test('devrait toujours garder la dernière entrée, même plus lourde que le maximum', () => {
+    const cache = new TtlCache({ maxEntries: 10, ttlMs: 60000, maxWeight: 100, weigh: (v) => v.size });
+    cache.set('a', { size: 30 });
+    cache.set('énorme', { size: 500 });
+    expect(cache.get('a')).toBeUndefined();
+    expect(cache.get('énorme')).toEqual({ size: 500 });
+  });
+
+  test("shrinkTo libère les plus anciennes jusqu'au poids demandé", () => {
+    const cache = new TtlCache({ maxEntries: 10, ttlMs: 60000, maxWeight: 1000, weigh: (v) => v.size });
+    ['a', 'b', 'c'].forEach((k) => cache.set(k, { size: 40 }));
+    cache.shrinkTo(50);
+    expect([...cache.entries.keys()]).toEqual(['c']);
+    cache.shrinkTo(0);
+    expect(cache.entries.size).toBe(0);
+  });
+
   test('devrait expirer les entrées', () => {
     const cache = new TtlCache({ maxEntries: 2, ttlMs: 0 });
     cache.set('a', 1);

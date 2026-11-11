@@ -15,9 +15,14 @@ class TtlCache {
    * @param {string|null} [options.diskDir] - Dossier de persistance (null = mémoire seule)
    * @param {number} [options.maxDiskBytes] - Taille max du dossier ; au-delà, les fichiers les plus anciens partent
    * @param {string} [options.diskPrefix] - Préfixe des fichiers de la version courante ; les autres sont obsolètes
+   * @param {number} [options.maxWeight] - Poids total max en mémoire (ex. : octets estimés) ; au-delà, les entrées
+   *   les moins récemment utilisées partent (la plus récente est toujours gardée)
+   * @param {(value: *) => number} [options.weigh] - Poids d'une valeur
    */
-  constructor({ maxEntries, ttlMs, diskDir = null, maxDiskBytes = Infinity, diskPrefix = "" }) {
+  constructor({ maxEntries, ttlMs, diskDir = null, maxDiskBytes = Infinity, diskPrefix = "", maxWeight = Infinity, weigh = null }) {
     this.maxEntries = maxEntries;
+    this.maxWeight = maxWeight;
+    this.weigh = weigh;
     this.ttlMs = ttlMs;
     this.diskDir = diskDir;
     this.maxDiskBytes = maxDiskBytes;
@@ -40,10 +45,25 @@ class TtlCache {
   }
 
   set(key, value) {
-    this.entries.set(key, { value, at: Date.now() });
-    while (this.entries.size > this.maxEntries) {
+    this.entries.delete(key);
+    this.entries.set(key, { value, at: Date.now(), weight: this.weigh ? this.weigh(value) : 0 });
+    while (this.entries.size > this.maxEntries || (this.entries.size > 1 && this.totalWeight() > this.maxWeight)) {
       this.entries.delete(this.entries.keys().next().value);
     }
+  }
+
+  /** Libère les entrées les moins récemment utilisées jusqu'à ne plus dépasser `weight` */
+  shrinkTo(weight) {
+    while (this.entries.size > 0 && this.totalWeight() > weight) {
+      this.entries.delete(this.entries.keys().next().value);
+    }
+  }
+
+  /** Poids total des entrées en mémoire */
+  totalWeight() {
+    let total = 0;
+    for (const { weight } of this.entries.values()) total += weight;
+    return total;
   }
 
   diskPath(key) {

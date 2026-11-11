@@ -21,7 +21,7 @@ describe('POST /api/liaisons', () => {
     app.use(express.json({ limit: '2mb' }));
     app.use('/api/generate', generateRoutes);
     app.use('/api/liaisons', liaisonRoutes);
-    fetchRoads.mockResolvedValue(gridSegments({ size: 9 }));
+    fetchRoads.mockImplementation(async () => gridSegments({ size: 9 }));
   });
 
   const asInput = (s) => ({ start: s.start, finish: s.finish, stop: s.stop, coordinates: s.geometry.coordinates.map(([lon, lat]) => [lon, lat]) });
@@ -65,7 +65,7 @@ describe('POST /api/liaisons', () => {
     expect(liaison.coordinates.at(-1)).toEqual(outside);
     expect(fetchRoads.mock.calls.map((c) => c[2])).toEqual([10, 15]);
     fetchRoads.mockReset();
-    fetchRoads.mockResolvedValue(gridSegments({ size: 9 }));
+    fetchRoads.mockImplementation(async () => gridSegments({ size: 9 }));
   });
 
   test.each([

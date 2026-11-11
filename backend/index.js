@@ -7,6 +7,7 @@ const compression = require("compression");
 
 const generateRoutes = require("./routes/generate");
 const liaisonRoutes = require("./routes/liaisons");
+const { memoryLabel, heapLimitMo } = require("./utils/memory");
 const waterRoutes = require("./routes/water");
 
 const app = express();
@@ -40,5 +41,6 @@ app.get("/api/ping", (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚗 Rally Stage Generator Backend`);
   console.log(`📍 Port: ${PORT}`);
+  console.log(`🧠 Mémoire : tas JavaScript limité à ${heapLimitMo()} Mo (${memoryLabel()})`);
   console.log(`----------------------------------`);
 });
