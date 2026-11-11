@@ -38,8 +38,10 @@ const startIcon = flagIcon("start", "D");
 const finishIcon = flagIcon("finish", "A");
 const stopIcon = flagIcon("stop", "S");
 
-const LOOP_ARROW_COLOR = "#1565c0";
-const LIAISON_COLOR = "#8e24aa";
+export const LOOP_ARROW_COLOR = "#1565c0";
+export const LIAISON_COLOR = "#8e24aa";
+export const ALTERNATIVE_COLOR = "#455a64";
+export const STOP_PATH_COLOR = "#263238";
 
 const arrowHeadIcon = (angle) =>
   new L.DivIcon({
@@ -153,11 +155,11 @@ const toLatLngs = (coords) => coords.map(([lon, lat]) => [lat, lon]);
 const STYLES = {
   casing: { color: "#ffffff", weight: 9, opacity: 0.9, interactive: false },
   selected: { color: "#e53935", weight: 5, opacity: 1, interactive: false },
-  alternative: { color: "#455a64", weight: 5, opacity: 0.55, dashArray: "8 6" },
+  alternative: { color: ALTERNATIVE_COLOR, weight: 5, opacity: 0.55, dashArray: "8 6" },
   searchArea: { color: "#5d6875", weight: 1.5, dashArray: "6 6", fill: false, interactive: false },
   pk: { color: "#ffffff", weight: 2, fillColor: "#263238", fillOpacity: 1 },
   hover: { color: "#ffffff", weight: 3, fillColor: "#e53935", fillOpacity: 1, interactive: false },
-  stopPath: { color: "#263238", weight: 3, dashArray: "2 7", interactive: false },
+  stopPath: { color: STOP_PATH_COLOR, weight: 3, dashArray: "2 7", interactive: false },
   sharedPortion: { color: LOOP_ARROW_COLOR, weight: 16, opacity: 0.45, lineCap: "round", interactive: false },
   loopArrowCasing: { color: "#ffffff", weight: 9, opacity: 0.95, lineCap: "round", interactive: false },
   loopArrow: { color: LOOP_ARROW_COLOR, weight: 5, opacity: 1, lineCap: "round", interactive: false },

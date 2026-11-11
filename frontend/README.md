@@ -18,6 +18,7 @@ Interface React du générateur de spéciales de rallye.
   - elles changent de côté ou disparaissent si elles toucheraient un autre morceau de la spéciale ;
   - elles sont recalculées à chaque zoom.
 - Carte avec fonds **Plan IGN**, **photo aérienne IGN** et OpenStreetMap
+- Légende repliable (repliée par défaut sur téléphone), qui n'affiche que ce qui est sur la carte : revêtements de la spéciale, autres tracés, liaisons (et compromis), chemin vers le point stop, zone de recherche, départ / arrivée / stop, cases du roadbook, numéros d'ES, boucle et son sens
 - Statistiques : longueur, sinuosité, lignes droites, dénivelé, pente max, revêtement
 - Profil d'altitude interactif (le survol positionne un repère sur la carte)
 - Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case, dont le point grossit (avec une onde) et affiche son étiquette ; à l'inverse, cliquer un point de la carte surligne sa case dans le roadbook

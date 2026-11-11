@@ -1,0 +1,100 @@
+.map-legend {
+  position: absolute;
+  z-index: 900;
+  right: 10px;
+  bottom: 28px;
+  width: max-content;
+  max-width: min(270px, calc(100% - 20px));
+  max-height: calc(100% - 130px);
+  overflow-y: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 0.8rem;
+}
+
+.map-legend-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.4rem 0.7rem;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.map-legend.open .map-legend-toggle {
+  border-bottom: 1px solid var(--border);
+}
+
+.map-legend-body {
+  padding: 0.2rem 0.7rem 0.5rem;
+}
+
+.map-legend h3 {
+  margin: 0.45rem 0 0.2rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.map-legend ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-legend li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 22px;
+}
+
+.legend-symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.legend-line {
+  width: 28px;
+  height: 14px;
+}
+
+/* Symboles des points : mêmes classes que sur la carte, en plus petit */
+.map-legend .legend-flag {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+  font-size: 10px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #263238;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.map-legend .legend-es {
+  padding: 0 4px;
+  font-size: 10px;
+  cursor: default;
+}
+
+.map-legend .legend-hub {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}

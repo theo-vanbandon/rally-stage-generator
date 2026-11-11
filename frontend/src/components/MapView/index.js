@@ -1,1 +1,1 @@
-export { default, SURFACE_STYLES } from "./MapView";
+export { default, SURFACE_STYLES, LIAISON_COLOR, LOOP_ARROW_COLOR, ALTERNATIVE_COLOR, STOP_PATH_COLOR } from "./MapView";

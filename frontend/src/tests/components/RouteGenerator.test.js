@@ -15,6 +15,10 @@ jest.mock('../../components/MapView', () => ({
     return <div data-testid="map" />;
   },
   SURFACE_STYLES: { paved: { color: 'red' }, gravel: { color: 'brown' }, dirt: { color: 'brown', dashArray: '7 6' } },
+  LIAISON_COLOR: 'purple',
+  LOOP_ARROW_COLOR: 'blue',
+  ALTERNATIVE_COLOR: 'grey',
+  STOP_PATH_COLOR: 'black',
 }));
 jest.mock('../../services/exportService', () => ({
   ...jest.requireActual('../../services/exportService'),

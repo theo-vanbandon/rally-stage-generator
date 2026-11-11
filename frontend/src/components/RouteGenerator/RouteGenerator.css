@@ -371,39 +371,6 @@ button.primary:disabled {
   }
 }
 
-/* Légende des revêtements sur la carte */
-.surface-legend {
-  position: absolute;
-  z-index: 900;
-  right: 10px;
-  bottom: 28px;
-  margin: 0;
-  padding: 0.45rem 0.7rem;
-  list-style: none;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  font-size: 0.8rem;
-}
-
-.surface-legend li {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.surface-legend span {
-  width: 20px;
-  height: 4px;
-  border-radius: 2px;
-  background: currentColor;
-}
-
-.surface-legend span.legend-dirt {
-  background: repeating-linear-gradient(90deg, currentColor 0 6px, transparent 6px 10px);
-}
-
 /* Roadbook : identité de l'épreuve et impression */
 .es-fields {
   display: grid;

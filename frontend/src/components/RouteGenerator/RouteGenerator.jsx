@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import MapView, { SURFACE_STYLES } from "../MapView";
+import MapView from "../MapView";
 import SpecialeStats from "../SpecialeStats";
 import CommuneSearch from "../CommuneSearch";
 import ElevationProfile from "../ElevationProfile";
@@ -8,7 +8,8 @@ import Roadbook from "../Roadbook";
 import RoadbookPrint, { PRINT_FORMATS } from "../RoadbookPrint";
 import LegalNotice from "../LegalNotice";
 import StageTabs from "../StageTabs";
-import LiaisonSummary, { LIAISON_COLOR } from "../LiaisonSummary";
+import LiaisonSummary from "../LiaisonSummary";
+import MapLegend from "../MapLegend";
 import useLiaisons from "../../hooks/useLiaisons";
 import { generateStage, pingBackend } from "../../services/api";
 import { exportStages, exportFilename } from "../../services/exportService";
@@ -579,26 +580,14 @@ export default function RouteGenerator() {
             focusedCase={focusedCase}
             onSelectCase={(c) => setFocusedCase({ ...c, fly: false })}
           />
-          {stage && (stage.stats.surfacePct.paved < 100 || mapLiaisons.length > 0) && (
-            <ul className="surface-legend" aria-label="Légende de la carte">
-              {stage.stats.surfacePct.paved < 100 &&
-                [
-                  ["paved", "Asphalte"],
-                  ["gravel", "Route empierrée"],
-                  ["dirt", "Chemin de terre"],
-                ].map(([key, label]) => (
-                  <li key={key}>
-                    <span className={`legend-${key}`} style={{ color: SURFACE_STYLES[key].color }} aria-hidden="true" />
-                    {label}
-                  </li>
-                ))}
-              {mapLiaisons.length > 0 && (
-                <li>
-                  <span style={{ color: LIAISON_COLOR }} aria-hidden="true" />
-                  Liaison
-                </li>
-              )}
-            </ul>
+          {stage && (
+            <MapLegend
+              stage={stage}
+              otherStages={stages.length - 1}
+              liaisons={mapLiaisons}
+              searchArea={Boolean(commune)}
+              rallyOrder={stages.length > 1}
+            />
           )}
           {loading && (
             <div className="map-overlay" role="status">
