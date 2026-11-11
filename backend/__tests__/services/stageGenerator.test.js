@@ -431,3 +431,33 @@ describe('Stage Generator Service', () => {
     });
   });
 });
+
+describe('point stop', () => {
+  const { findStopPoint } = require('../../services/stageGenerator');
+  const { buildNetwork } = require('../../services/roadNetwork');
+  const { segment, CENTER } = require('../fixtures/network');
+  const at = (dx, dy) => [CENTER.lon + dx, CENTER.lat + dy];
+  const key = (c) => `${c[0]},${c[1]}`;
+
+  // Arrivée F au bord d'une route principale (importance 3) ; au 1er carrefour M1 (~100 m), une impasse part vers
+  // le nord, déclarée AVANT la suite de la grande route (c'est elle que l'ancien algorithme prenait)
+  const network = buildNetwork(
+    [
+      segment([at(0, 0), at(0.01, 0)]), // fin de la spéciale W → F
+      segment([at(0.01, 0), at(0.0113, 0)], { importance: 3 }), // F → M1
+      segment([at(0.0113, 0), at(0.0113, 0.003)], { importance: 6 }), // impasse M1 → D (≈ 330 m)
+      segment([at(0.0113, 0), at(0.02, 0)], { importance: 3 }), // grande route M1 → M2
+      segment([at(0.02, 0), at(0.03, 0)], { importance: 3 }),
+    ],
+    CENTER
+  );
+  const nodeAt = (c) => network.nodes.findIndex((n) => key(n.coord) === key(c));
+
+  test("ne s'arrête jamais dans une impasse : il continue sur la route qui mène quelque part", () => {
+    const stop = findStopPoint(network, nodeAt(at(0.01, 0)), new Set([nodeAt(at(0, 0)), nodeAt(at(0.01, 0))]));
+    expect(stop.distanceKm).toBeGreaterThanOrEqual(0.3);
+    // Toujours sur la grande route (latitude constante), jamais dans l'impasse vers le nord
+    expect(stop.path.every(([, lat]) => lat === CENTER.lat)).toBe(true);
+    expect(key(stop.ahead.node)).toBe(key(at(0.02, 0)));
+  });
+});

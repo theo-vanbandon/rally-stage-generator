@@ -1233,59 +1233,77 @@ function linkCoords(network, link, fromNode) {
 }
 
 /**
- * Point stop : on prolonge après l'arrivée lancée en suivant la route de sortie, sur 300 m environ.
- * Si le chemin vers le reste du réseau est plus court, on continue sur les routes suivantes
- * (jamais sur la spéciale) jusqu'à la distance voulue.
+ * Point stop : on prolonge après l'arrivée lancée sur 300 m environ, comme le ferait un organisateur :
+ *  - jamais dans une impasse : une route n'est prise que si, depuis son bout, on peut rejoindre le reste du réseau
+ *    sans revenir en arrière ni emprunter la spéciale (sinon la liaison suivante commencerait par un demi-tour) ;
+ *  - parmi ces routes, on continue au plus droit, en préférant la route la plus importante.
+ * `ahead` : suite de la route après le point stop (jusqu'au prochain carrefour), départ de la liaison suivante.
  */
 function findStopPoint(network, finishNode, stageNodes) {
-  const { nodes } = network;
-  const path = exitPath(network, finishNode, stageNodes);
-  if (!path || path.length < 2) return null;
-
+  const { nodes, linkSpeed } = network;
   const coords = [nodes[finishNode].coord];
   const used = new Set([finishNode]);
   let km = 0;
   let node = finishNode;
   let prev = null;
-  // Suite de la route après le point stop (jusqu'au prochain carrefour) : point de départ de la liaison suivante
+  let firstSeg = null;
   let ahead = null;
-  const done = () => ({
+
+  // La route vers `next` mène-t-elle quelque part ? (grand axe, agglomération, bord de zone ou réseau assez vaste)
+  const leadsSomewhere = (next) => {
+    if (nodes[next].anchor) return true;
+    const blocked = { has: (n) => stageNodes.has(n) || used.has(n) };
+    return exitPath(network, next, blocked) !== null;
+  };
+
+  // Prochaine route : pas d'impasse, puis la plus droite (écart de cap), puis la plus importante (vitesse)
+  const nextRoad = () => {
+    const heading = coords.length > 1 ? bearing(coords.at(-2), coords.at(-1)) : null;
+    const { links, linkIds } = nodes[node];
+    let best = null;
+    for (let k = 0; k < links.length; k++) {
+      const next = links[k];
+      if (used.has(next) || stageNodes.has(next)) continue;
+      if (!leadsSomewhere(next)) continue;
+      const pts = linkCoords(network, linkIds[k], node);
+      const turn = heading === null ? 0 : Math.abs(signedAngle(heading, bearing(pts[0], pts[Math.min(1, pts.length - 1)])));
+      // 45° de virage « valent » 10 km/h : on reste sur la grande route, sauf si elle tourne franchement
+      const cost = turn / 45 - linkSpeed[linkIds[k]] / 10;
+      if (!best || cost < best.cost) best = { cost, link: linkIds[k], next };
+    }
+    return best;
+  };
+
+  while (km < STOP_MIN_KM) {
+    const road = nextRoad();
+    if (!road) break;
+    firstSeg ??= network.linkSeg[road.link];
+    const pts = linkCoords(network, road.link, node);
+    let reached = false;
+    for (let i = 1; i < pts.length; i++) {
+      km += haversineKm(coords.at(-1), pts[i]);
+      coords.push(pts[i]);
+      if (km >= STOP_MIN_KM) {
+        // node : carrefour d'où l'on vient (pas de demi-tour), next : carrefour où mène la route
+        ahead = { coords: pts.slice(i), node: nodes[road.next].coord, from: nodes[node].coord };
+        reached = true;
+        break;
+      }
+    }
+    if (reached) break;
+    used.add(road.next);
+    prev = node;
+    node = road.next;
+  }
+  if (coords.length < 2) return null;
+
+  return {
     coord: coords.at(-1),
     path: coords,
     distanceKm: round2(km),
-    firstSeg: network.linkSeg[path[1].link],
+    firstSeg,
     ahead: ahead ?? { coords: [coords.at(-1)], node: nodes[node].coord, from: prev === null ? null : nodes[prev].coord },
-  });
-
-  // Avance le long d'une route, coupée dès que la distance voulue est atteinte ; true = point stop trouvé
-  const follow = (link, next) => {
-    const pts = linkCoords(network, link, node);
-    for (let i = 1; i < pts.length; i++) {
-      const p = pts[i];
-      km += haversineKm(coords.at(-1), p);
-      coords.push(p);
-      if (km >= STOP_MIN_KM) {
-        // node : carrefour d'où l'on vient (pas de demi-tour), next : carrefour où mène la route
-        ahead = { coords: pts.slice(i), node: nodes[next].coord, from: nodes[node].coord };
-        return true;
-      }
-    }
-    used.add(next);
-    prev = node;
-    node = next;
-    return false;
   };
-
-  for (const step of path.slice(1)) {
-    if (follow(step.link, step.node)) return done();
-  }
-  while (km < STOP_MIN_KM) {
-    const { links, linkIds } = nodes[node];
-    const k = links.findIndex((n) => !used.has(n) && !stageNodes.has(n));
-    if (k === -1) break;
-    if (follow(linkIds[k], links[k])) break;
-  }
-  return done();
 }
 
 /**
@@ -1839,6 +1857,7 @@ function selectStages(network, candidates, avoided, rng) {
 
 module.exports = {
   generateStages,
+  findStopPoint,
   compatibleStage,
   STAGE_GAP_TIERS_KM,
   loopStageWalk,

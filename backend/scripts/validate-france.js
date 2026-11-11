@@ -161,6 +161,16 @@ function checkStage(stage, { network, nodeByCoord, surface, length, result }) {
   if (!hasExit(network, nodeByCoord.get(key(stage.start)), stageNodes)) fail("départ inaccessible");
   if (!hasExit(network, nodeByCoord.get(key(stage.finish)), stageNodes)) fail("arrivée enfermée");
 
+  // Point stop jamais dans une impasse : après lui, la route mène quelque part sans demi-tour ni passer par la spéciale
+  if (stage.stop?.ahead) {
+    const aheadNode = nodeByCoord.get(key(stage.stop.ahead.node));
+    const behind = new Set([...stageNodes, ...stage.stop.path.map(key).filter((k) => nodeByCoord.has(k)).map((k) => nodeByCoord.get(k))]);
+    behind.delete(aheadNode);
+    if (aheadNode === undefined || (!network.nodes[aheadNode].anchor && !hasExit(network, aheadNode, behind))) {
+      fail("point stop dans une impasse");
+    }
+  }
+
   // Zones habitées
   if (stats.urbanPct > 40) fail(`${stats.urbanPct} % en zone habitée`);
 
