@@ -10,6 +10,9 @@ import LegalNotice from "../LegalNotice";
 import StageTabs from "../StageTabs";
 import LiaisonSummary from "../LiaisonSummary";
 import MapLegend from "../MapLegend";
+import WaterPoints from "../WaterPoints";
+import useWaterPoints from "../../hooks/useWaterPoints";
+import { waterLabel } from "../../utils/water";
 import useLiaisons from "../../hooks/useLiaisons";
 import { generateStage, pingBackend } from "../../services/api";
 import { exportStages, exportFilename } from "../../services/exportService";
@@ -220,6 +223,9 @@ export default function RouteGenerator() {
     [rallyOrder, displayedStages]
   );
   const liaisonState = useLiaisons(result?.center ?? null, result?.radiusKm ?? null, orderedStages);
+  // Vigilance eau (plongeurs) : calculée pour chaque spéciale affichée, dans son sens
+  const waterState = useWaterPoints(displayedStages);
+  const stageWater = waterState.points[selectedIndex] ?? [];
   const mapLiaisons = useMemo(
     () =>
       liaisonState.liaisons
@@ -477,6 +483,12 @@ export default function RouteGenerator() {
 
               <SpecialeStats stats={stage.stats} />
 
+              <WaterPoints
+                status={waterState.status}
+                points={stageWater}
+                onSelect={(p) => setFocusedCase({ coord: p.coord, km: p.km, label: waterLabel(p), fly: true })}
+              />
+
               {stage.stats.elevation && (
                 <div className="block">
                   <h2>Profil</h2>
@@ -575,6 +587,7 @@ export default function RouteGenerator() {
             onSelect={(i) => showView(i, reversedTraces)}
             liaisons={mapLiaisons}
             esNumbers={esNumbers}
+            waterPoints={stageWater}
             searchArea={commune ? { lat: commune.lat, lon: commune.lon, radiusKm } : null}
             hoverPoint={hoverPoint}
             focusedCase={focusedCase}
@@ -587,6 +600,7 @@ export default function RouteGenerator() {
               liaisons={mapLiaisons}
               searchArea={Boolean(commune)}
               rallyOrder={stages.length > 1}
+              water={stageWater}
             />
           )}
           {loading && (

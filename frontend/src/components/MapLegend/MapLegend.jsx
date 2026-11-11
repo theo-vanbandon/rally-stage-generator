@@ -43,6 +43,19 @@ function LoopArrow() {
   );
 }
 
+/** Pictogramme de vigilance eau, comme sur la carte */
+function WaterSymbol({ level }) {
+  return (
+    <span className={`water-marker ${level} legend-water`}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 9c2-2 4-2 6 0s4 2 6 0 4-2 6 0M3 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
+      </svg>
+    </span>
+  );
+}
+
+WaterSymbol.propTypes = { level: PropTypes.oneOf(["divers", "watch"]).isRequired };
+
 function Item({ symbol, children }) {
   return (
     <li>
@@ -58,7 +71,7 @@ Item.propTypes = { symbol: PropTypes.node.isRequired, children: PropTypes.node.i
  * Légende de la carte : uniquement ce qui y est réellement dessiné (revêtements de la spéciale affichée, autres
  * tracés, liaisons, boucle…). Repliable ; repliée par défaut sur téléphone pour laisser la carte visible.
  */
-export default function MapLegend({ stage, otherStages = 0, liaisons = [], searchArea = false, rallyOrder = false }) {
+export default function MapLegend({ stage, otherStages = 0, liaisons = [], searchArea = false, rallyOrder = false, water = [] }) {
   const [open, setOpen] = useState(() => !(window.matchMedia?.(MOBILE_QUERY)?.matches ?? false));
   const { surfacePct, loop } = stage.stats;
   const mixed = surfacePct.paved < 100;
@@ -105,6 +118,10 @@ export default function MapLegend({ stage, otherStages = 0, liaisons = [], searc
             {stage.stop && <Item symbol={<span className="stage-flag stop legend-flag">S</span>}>Point stop</Item>}
             <Item symbol={<span className="legend-dot" />}>Case du roadbook (cliquer pour la voir)</Item>
             {rallyOrder && <Item symbol={<span className="es-badge selected legend-es">ES1</span>}>Numéro d&apos;ES (ordre du rallye)</Item>}
+            {water.some((p) => p.level === "divers") && (
+              <Item symbol={<WaterSymbol level="divers" />}>Plongeurs recommandés</Item>
+            )}
+            {water.some((p) => p.level === "watch") && <Item symbol={<WaterSymbol level="watch" />}>Eau à surveiller</Item>}
           </ul>
 
           {loop && (
@@ -138,4 +155,5 @@ MapLegend.propTypes = {
   liaisons: PropTypes.arrayOf(PropTypes.shape({ warnings: PropTypes.arrayOf(PropTypes.string) })),
   searchArea: PropTypes.bool,
   rallyOrder: PropTypes.bool,
+  water: PropTypes.arrayOf(PropTypes.shape({ level: PropTypes.string })),
 };

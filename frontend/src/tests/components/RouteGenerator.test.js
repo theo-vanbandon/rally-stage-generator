@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import RouteGenerator from '../../components/RouteGenerator';
-import { generateStage, computeLiaisons } from '../../services/api';
+import { generateStage, computeLiaisons, computeWaterPoints } from '../../services/api';
 import { exportStages } from '../../services/exportService';
 import { mockStage } from '../fixtures/stage';
 
@@ -27,6 +27,7 @@ jest.mock('../../services/exportService', () => ({
 jest.mock('../../services/api', () => ({
   generateStage: jest.fn(),
   computeLiaisons: jest.fn(),
+  computeWaterPoints: jest.fn(),
   pingBackend: jest.fn(),
   searchCommunes: jest.fn(() => Promise.resolve([])),
 }));
@@ -51,6 +52,7 @@ const response = (ids, extra = {}) => ({
 describe('RouteGenerator Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    computeWaterPoints.mockImplementation(async (stages) => ({ ok: true, points: stages.map(() => []) }));
     computeLiaisons.mockImplementation(async ({ stages }) => ({
       ok: true,
       liaisons: stages.slice(1).map((_, i) => ({ from: i, to: i + 1, ok: true, km: 10 + i, minutes: 12 + i, coordinates: [[6, 44.5], [6.1, 44.6]] })),
@@ -179,6 +181,31 @@ describe('RouteGenerator Component', () => {
       generateStage.mockResolvedValueOnce(response(['a', 'b']));
       render(<RouteGenerator />);
       expect(await screen.findByText(/aucune route trouvée entre ces deux spéciales/)).toBeInTheDocument();
+    });
+  });
+
+  describe('vigilance eau', () => {
+    test("liste les points de la spéciale affichée, et ne montre rien quand il n'y en a pas", async () => {
+      const point = { level: 'divers', km: 2.98, fromKm: 2.9, toKm: 3.1, coord: [6.01, 44.505], side: 'droite', kind: "plan d'eau", name: 'Lac du Ganivet', distanceM: 3, reasons: ['extérieur de virage'] };
+      computeWaterPoints.mockResolvedValueOnce({ ok: true, points: [[point], []] });
+      generateStage.mockResolvedValueOnce(response(['a', 'b']));
+      render(<RouteGenerator />);
+
+      const item = await screen.findByRole('button', { name: /Lac du Ganivet/ });
+      expect(within(item).getByText('Plongeurs recommandés')).toBeInTheDocument();
+      expect(within(item).getByText('Lac du Ganivet à droite, à 3 m de la route')).toBeInTheDocument();
+      // Le symbole est aussi expliqué dans la légende de la carte
+      expect(within(screen.getByLabelText('Légende de la carte')).getByText('Plongeurs recommandés')).toBeInTheDocument();
+      expect(screen.getByText('extérieur de virage')).toBeInTheDocument();
+      // Un clic montre le point sur la carte
+      fireEvent.click(screen.getByRole('button', { name: /Lac du Ganivet/ }));
+      expect(lastMapProps().focusedCase).toEqual(expect.objectContaining({ coord: [6.01, 44.505], fly: true }));
+      expect(lastMapProps().waterPoints).toEqual([point]);
+
+      // Sans point, le bloc disparaît : pas de message qui laisserait croire à une spéciale « sans danger »
+      fireEvent.click(screen.getByRole('tab', { name: /Tracé 2/ }));
+      expect(screen.queryByText(/Vigilance eau/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Aide à la préparation/)).not.toBeInTheDocument();
     });
   });
 

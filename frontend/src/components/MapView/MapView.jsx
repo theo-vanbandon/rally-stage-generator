@@ -16,6 +16,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { bboxAround, cumulativeDistances, loopArrows, pointAtKm } from "../../utils/geometry";
+import { waterLabel } from "../../utils/water";
 import "./MapView.css";
 
 const FRANCE_CENTER = [46.6, 2.5];
@@ -210,14 +211,18 @@ const focusIcon = new L.DivIcon({
   iconAnchor: [22, 22],
 });
 
-/** Case sélectionnée : point agrandi qui pulse, avec son étiquette affichée en permanence */
+/** Case sélectionnée (ou point de vigilance) : point agrandi qui pulse, avec son étiquette affichée en permanence */
 function FocusMarker({ roadbookCase }) {
-  const { n, coord, km, direction, road } = roadbookCase;
+  const { n, coord, km, direction, road, label } = roadbookCase;
   return (
     <Marker position={[coord[1], coord[0]]} icon={focusIcon} zIndexOffset={1200} interactive={false} keyboard={false}>
       <Tooltip permanent direction="top" offset={[0, -18]} className="focus-tooltip">
-        <strong>Case {n}</strong> — km {km.toFixed(2)} — {direction}
-        {road ? ` (${road})` : ""}
+        {label ?? (
+          <>
+            <strong>Case {n}</strong> — km {km.toFixed(2)} — {direction}
+            {road ? ` (${road})` : ""}
+          </>
+        )}
       </Tooltip>
     </Marker>
   );
@@ -225,13 +230,24 @@ function FocusMarker({ roadbookCase }) {
 
 FocusMarker.propTypes = {
   roadbookCase: PropTypes.shape({
-    n: PropTypes.number.isRequired,
+    n: PropTypes.number,
     coord: PropTypes.arrayOf(PropTypes.number).isRequired,
-    km: PropTypes.number.isRequired,
-    direction: PropTypes.string.isRequired,
+    km: PropTypes.number,
+    direction: PropTypes.string,
     road: PropTypes.string,
+    label: PropTypes.string,
   }).isRequired,
 };
+
+/** Pictogramme des points de vigilance eau : vagues blanches sur bleu (plongeurs) ou bleu sur blanc (à surveiller) */
+const waterIcon = (level) =>
+  new L.DivIcon({
+    html: `<span class="water-marker ${level}" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 9c2-2 4-2 6 0s4 2 6 0 4-2 6 0M3 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></svg></span>`,
+    className: "water-marker-icon",
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+const WATER_ICONS = { divers: waterIcon("divers"), watch: waterIcon("watch") };
 
 export default function MapView({
   stages = [],
@@ -243,6 +259,7 @@ export default function MapView({
   onSelectCase = () => {},
   liaisons = [],
   esNumbers = [],
+  waterPoints = [],
 }) {
   const lines = useMemo(() => stages.map((s) => toLatLngs(s.geometry.coordinates)), [stages]);
   const selected = stages[selectedIndex];
@@ -405,7 +422,21 @@ export default function MapView({
         />
       )}
 
-      {focusedCase && <FocusMarker key={focusedCase.n} roadbookCase={focusedCase} />}
+      {selectedLine &&
+        waterPoints.map((p) => (
+          <Marker
+            key={`eau-${p.level}-${p.km}`}
+            position={[p.coord[1], p.coord[0]]}
+            icon={WATER_ICONS[p.level]}
+            zIndexOffset={p.level === "divers" ? 980 : 970}
+          >
+            <Tooltip direction="top" offset={[0, -14]}>
+              {waterLabel(p)}
+            </Tooltip>
+          </Marker>
+        ))}
+
+      {focusedCase && <FocusMarker key={focusedCase.n ?? focusedCase.label} roadbookCase={focusedCase} />}
       <FlyTo focus={focusedCase} />
     </MapContainer>
   );
@@ -455,4 +486,7 @@ MapView.propTypes = {
     })
   ),
   esNumbers: PropTypes.arrayOf(PropTypes.number),
+  waterPoints: PropTypes.arrayOf(
+    PropTypes.shape({ level: PropTypes.string, km: PropTypes.number, coord: PropTypes.arrayOf(PropTypes.number) })
+  ),
 };

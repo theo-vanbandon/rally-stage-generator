@@ -98,3 +98,14 @@
   height: 20px;
   border-width: 2px;
 }
+
+.map-legend .legend-water {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+
+.map-legend .legend-water svg {
+  width: 13px;
+  height: 13px;
+}

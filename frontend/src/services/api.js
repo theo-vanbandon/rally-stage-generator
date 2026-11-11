@@ -126,3 +126,28 @@ export async function computeLiaisons({ lat, lon, radiusKm, stages }, { signal }
   if (!res.ok || !data?.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
   return data;
 }
+
+/**
+ * Points de vigilance eau (plongeurs) le long des spéciales, chacune dans son sens
+ * @param {object[]} stages - Spéciales (format de l'API)
+ * @param {{signal?: AbortSignal}} [options]
+ * @returns {Promise<{points: object[][]}>} un tableau de points par spéciale
+ */
+export async function computeWaterPoints(stages, { signal } = {}) {
+  const body = { stages: stages.map((s) => ({ coordinates: s.geometry.coordinates.map(([lon, lat]) => [lon, lat]) })) };
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}/water`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") throw err;
+    throw new Error("Impossible de joindre le serveur pour la vigilance eau.");
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.ok) throw new Error(data?.error || `Erreur serveur (${res.status})`);
+  return data;
+}

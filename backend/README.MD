@@ -55,13 +55,15 @@ backend/
 ├── index.js                    # Point d'entrée Express
 ├── routes/
 │   ├── generate.js             # POST /api/generate (validation, cache, orchestration)
-│   └── liaisons.js             # POST /api/liaisons (liaisons dans l'ordre du rallye)
+│   ├── liaisons.js             # POST /api/liaisons (liaisons dans l'ordre du rallye)
+│   └── water.js                # POST /api/water (points de vigilance eau)
 ├── services/
 │   ├── geocoder.js             # Communes françaises (geo.api.gouv.fr + Nominatim)
 │   ├── bdtopo.js               # Téléchargement du réseau IGN BD TOPO
 │   ├── roadNetwork.js          # Graphe routier + caractérisation des tronçons
 │   ├── stageGenerator.js       # Marches aléatoires, notation, roadbook, altitude
 │   ├── liaisons.js             # Trajets point stop → départ suivant (Dijkstra, sens interdits)
+│   ├── water.js                # Vigilance eau : étendues d'eau importantes au bord du tracé (plongeurs)
 │   └── cache.js                # Cache LRU mémoire/disque
 ├── utils/
 │   └── geometry.js             # Distances, caps, rééchantillonnage, RNG
@@ -224,6 +226,35 @@ Liaisons entre les spéciales proposées, dans l'ordre du rallye choisi par l'ut
 }
 ```
 `tier` : niveau de compromis (1 = propre). `expandedKm` : présent quand la liaison a été calculée sur une zone élargie. `ok: false` n'arrive que si aucune route ne relie les deux spéciales dans les données (départ isolé du réseau).
+
+### `POST /api/water`
+
+Points de vigilance eau (plongeurs) le long des spéciales, chacune dans son sens. Peu de points, mais tous défendables :
+
+- **Eau importante uniquement**, filtrée dès la requête IGN (BD TOPO hydrographie) :
+  - surfaces en eau permanentes : plans d'eau d'au moins 1 ha, rivières et canaux assez larges pour être dessinés en surface ;
+  - cours d'eau permanents d'au moins 5 m de large ;
+  - jamais les fossés, mares, bassins d'orage, conduits enterrés ni cours d'eau intermittents.
+- **Plongeurs recommandés** (`divers`) : eau à 10 m au plus à l'extérieur d'un virage franc, ou à 6 m au plus après une ligne droite de 400 m. **Au plus un endroit par spéciale**, le plus exposé.
+- **À surveiller** (`watch`) : plan d'eau ou grande rivière à 10 m au plus, sans exposition particulière.
+- Un pont seul n'est jamais signalé (parapets) ; un virage qui jette vers l'eau à ses abords est détecté par les berges.
+- Mémoire : seule l'eau d'un rectangle serré autour de chaque spéciale est téléchargée, avec un petit cache.
+
+Sur 216 spéciales de 12 communes (montagne, lacs, rivières, plaine du Nord), 202 n'ont aucun point ; les « plongeurs recommandés » sont des berges de lac ou de rivière dans un virage.
+
+**Requête** : `{ "stages": [{ "coordinates": [[6.06, 44.58], "..."] }] }`
+
+**Réponse**
+```json
+{
+  "ok": true,
+  "points": [
+    [{ "level": "divers", "km": 4.23, "fromKm": 4.15, "toKm": 4.3, "coord": [6.05, 44.61], "side": "droite",
+       "kind": "plan d'eau", "name": "Lac de l'Aulagnier", "distanceM": 3, "reasons": ["extérieur de virage"] }],
+    []
+  ]
+}
+```
 
 ### `GET /api/ping`
 

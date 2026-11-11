@@ -7,6 +7,7 @@ const compression = require("compression");
 
 const generateRoutes = require("./routes/generate");
 const liaisonRoutes = require("./routes/liaisons");
+const waterRoutes = require("./routes/water");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -28,6 +29,7 @@ app.use(cors(corsOptions));
 // Routes
 app.use("/api/generate", generateRoutes);
 app.use("/api/liaisons", liaisonRoutes);
+app.use("/api/water", waterRoutes);
 
 // Health check
 app.get("/api/ping", (req, res) => {

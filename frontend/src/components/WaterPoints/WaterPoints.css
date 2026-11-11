@@ -1,0 +1,63 @@
+.water-points ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.water-point {
+  display: grid;
+  grid-template-columns: 4.2rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: start;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.water-point.divers {
+  border-left-color: #0d47a1;
+}
+
+.water-point.watch {
+  border-left-color: #64b5f6;
+}
+
+.water-point:hover {
+  border-color: var(--accent);
+}
+
+.water-km {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.water-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.86rem;
+}
+
+.water-point.divers strong {
+  color: #0d47a1;
+}
+
+.water-text small {
+  color: var(--text-muted);
+}
+
+.water-note {
+  margin: 0.45rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}

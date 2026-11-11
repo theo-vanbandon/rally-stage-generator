@@ -20,6 +20,7 @@ Interface React du générateur de spéciales de rallye.
 - Carte avec fonds **Plan IGN**, **photo aérienne IGN** et OpenStreetMap
 - Légende repliable (repliée par défaut sur téléphone), qui n'affiche que ce qui est sur la carte : revêtements de la spéciale, autres tracés, liaisons (et compromis), chemin vers le point stop, zone de recherche, départ / arrivée / stop, cases du roadbook, numéros d'ES, boucle et son sens
 - Statistiques : longueur, sinuosité, lignes droites, dénivelé, pente max, revêtement
+- **Vigilance eau (plongeurs)** : endroits où une sortie de route peut finir dans une étendue d'eau importante (lac, étang, grande rivière), sur la carte (pictogramme vague) et dans une liste cliquable. Au plus un point « plongeurs recommandés » par spéciale, le plus exposé (eau à l'extérieur d'un virage ou après une portion rapide) ; les fossés et petits cours d'eau sont ignorés
 - Profil d'altitude interactif (le survol positionne un repère sur la carte)
 - Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case, dont le point grossit (avec une onde) et affiche son étiquette ; à l'inverse, cliquer un point de la carte surligne sa case dans le roadbook
 - Impression du roadbook en A5 ou A4 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
