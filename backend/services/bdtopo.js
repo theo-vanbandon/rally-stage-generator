@@ -13,7 +13,7 @@ const { bboxAround } = require("../utils/geometry");
 const WFS_URL = "https://data.geopf.fr/wfs/ows";
 const LAYER = "BDTOPO_V3:troncon_de_route";
 const PAGE_SIZE = 5000;
-const MAX_PARALLEL = 6;
+const MAX_PARALLEL = 3; // pages téléchargées en même temps : plus = plus rapide, mais plus de GeoJSON brut en mémoire
 const TIMEOUT_MS = 30000;
 const RETRIES = 3;
 // Au-delà, la zone ne tient pas dans la mémoire d'un petit serveur (512 Mo) : refusée proprement (« zone trop dense »)
@@ -126,7 +126,7 @@ function compactSegment(feature) {
  */
 async function fetchRoads(lat, lon, radiusKm) {
   const filter = buildFilter(lat, lon, radiusKm);
-  const first = await fetchPage(filter, 0);
+  let first = await fetchPage(filter, 0);
   const total = first.numberMatched ?? first.features.length;
   if (total > MAX_SEGMENTS) {
     // Au-delà, la mémoire du serveur ne suffit plus (et c'est forcément une zone très urbanisée)
@@ -137,21 +137,23 @@ async function fetchRoads(lat, lon, radiusKm) {
     throw err;
   }
 
-  const offsets = [];
-  for (let start = PAGE_SIZE; start < total; start += PAGE_SIZE) offsets.push(start);
-
-  const pages = [first];
-  for (let i = 0; i < offsets.length; i += MAX_PARALLEL) {
-    const batch = offsets.slice(i, i + MAX_PARALLEL).map((start) => fetchPage(filter, start));
-    pages.push(...(await Promise.all(batch)));
-  }
-
+  // Chaque page est compactée dès son arrivée et son GeoJSON brut libéré : garder les ~20 pages brutes d'une grande
+  // zone jusqu'à la fin faisait dépasser la mémoire de l'hébergeur (512 Mo). L'ordre des tronçons est conservé.
   const segments = [];
-  for (const page of pages) {
+  const keep = (page) => {
     for (const f of page.features) {
       const seg = compactSegment(f);
       if (seg) segments.push(seg);
     }
+  };
+  keep(first);
+  first = null;
+
+  const offsets = [];
+  for (let start = PAGE_SIZE; start < total; start += PAGE_SIZE) offsets.push(start);
+  for (let i = 0; i < offsets.length; i += MAX_PARALLEL) {
+    const batch = await Promise.all(offsets.slice(i, i + MAX_PARALLEL).map((start) => fetchPage(filter, start)));
+    batch.forEach(keep);
   }
   return segments;
 }
