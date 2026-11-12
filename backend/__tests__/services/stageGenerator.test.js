@@ -461,3 +461,59 @@ describe('point stop', () => {
     expect(key(stop.ahead.node)).toBe(key(at(0.02, 0)));
   });
 });
+
+describe('point stop et autres spéciales du rallye', () => {
+  const { findStopPoint, escapes } = require('../../services/stageGenerator');
+  const { buildNetwork } = require('../../services/roadNetwork');
+  const { segment, CENTER } = require('../fixtures/network');
+  const at = (dx, dy) => [CENTER.lon + dx, CENTER.lat + dy];
+  const key = (c) => `${c[0]},${c[1]}`;
+
+  // Arrivée F. Tout droit, une grande route F → P → Q bute sur une AUTRE spéciale (nord-sud, x = 0.03) : c'est
+  // une poche fermée le jour du rallye. À gauche, une petite route F → N → N2 rejoint le bord de la zone.
+  const build = (eastDirection = 'Double sens') =>
+    buildNetwork(
+      [
+        segment([at(0, 0), at(0.01, 0)]), // fin de la spéciale W → F
+        segment([at(0.01, 0), at(0.02, 0)], { importance: 3, direction: eastDirection }), // F → P
+        segment([at(0.02, 0), at(0.03, 0)], { importance: 3 }), // P → Q (sur l'autre spéciale)
+        segment([at(0.03, -0.03), at(0.03, 0)]), // autre spéciale, moitié sud
+        segment([at(0.03, 0), at(0.03, 0.03)]), // autre spéciale, moitié nord
+        segment([at(0.03, 0), at(0.05, 0)], { importance: 3 }), // la grande route continue au-delà
+        segment([at(0.01, 0), at(0.01, 0.01)], { importance: 6 }), // F → N
+        segment([at(0.01, 0.01), at(0.01, 0.03)], { importance: 6 }), // N → N2 (bord de zone)
+      ],
+      CENTER
+    );
+  const setup = (direction) => {
+    const network = build(direction);
+    const nodeAt = (c) => network.nodes.findIndex((n) => key(n.coord) === key(c));
+    const own = new Set([nodeAt(at(0, 0)), nodeAt(at(0.01, 0))]);
+    const other = [at(0.03, -0.03), at(0.03, 0), at(0.03, 0.03)].map(nodeAt);
+    return { network, nodeAt, own, closed: new Set([...own, ...other]) };
+  };
+  const goesNorth = (stop) => stop.path.slice(1).every(([lon]) => lon === CENTER.lon + 0.01);
+
+  test('sans les autres spéciales, il continue tout droit sur la grande route', () => {
+    const { network, nodeAt, own } = setup();
+    const stop = findStopPoint(network, nodeAt(at(0.01, 0)), own);
+    expect(stop.path.every(([, lat]) => lat === CENTER.lat)).toBe(true);
+  });
+
+  test("ne part jamais vers une route qui bute sur une autre spéciale (demi-tour forcé à la liaison)", () => {
+    const { network, nodeAt, own, closed } = setup();
+    expect(escapes(network, nodeAt(at(0.02, 0)), closed)).toBe(false);
+    const stop = findStopPoint(network, nodeAt(at(0.01, 0)), own, closed);
+    expect(stop.distanceKm).toBeGreaterThanOrEqual(0.3);
+    expect(goesNorth(stop)).toBe(true);
+  });
+
+  test('respecte les sens interdits', () => {
+    // F → P en sens unique dans l'autre sens : interdit de continuer tout droit
+    const { network, nodeAt, own } = setup('Sens inverse');
+    const stop = findStopPoint(network, nodeAt(at(0.01, 0)), own);
+    expect(goesNorth(stop)).toBe(true);
+    // ... mais on peut arriver à F par là
+    expect(escapes(network, nodeAt(at(0.01, 0)), own, { inbound: true })).toBe(true);
+  });
+});

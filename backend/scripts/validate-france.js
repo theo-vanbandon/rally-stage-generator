@@ -14,7 +14,8 @@
 const { geocode } = require("../services/geocoder");
 const { fetchRoads } = require("../services/bdtopo");
 const { buildNetwork } = require("../services/roadNetwork");
-const { generateStages, hasExit, LENGTH_PRESETS, LOOP_PRESETS, SHARED_PRESETS } = require("../services/stageGenerator");
+const { generateStages, hasExit, escapes, LENGTH_PRESETS, LOOP_PRESETS, SHARED_PRESETS } = require("../services/stageGenerator");
+const { computeLiaisons, CLEAN_TIERS } = require("../services/liaisons");
 const { TtlCache, DEFAULT_DISK_DIR } = require("../services/cache");
 const { haversineKm } = require("../utils/geometry");
 const { searchRadii } = require("../routes/generate");
@@ -43,6 +44,7 @@ const COMMUNES = [
   ["Gérardmer", "88400", 12, "Vosges"],
   ["Sélestat", "67600", 12, "Alsace, plaine et vignoble"],
   ["Langres", "52200", 12, "Plateau de Langres"],
+  ["Laventie", "62840", 10, "Flandre, plaine bocagère"],
   ["Chartres", "28000", 12, "Beauce, openfield"],
   ["Châlons-en-Champagne", "51000", 12, "Champagne crayeuse"],
   ["Mont-de-Marsan", "40000", 12, "Landes, forêt de pins"],
@@ -291,7 +293,42 @@ function checkAlternatives(stages, { network, nodeByCoord }) {
   stages.forEach((s, i) => {
     if (!hasExit(network, nodeByCoord.get(key(s.start)), closed)) problems.push(`tracé ${i + 1} : départ bloqué par une autre spéciale`);
     if (!hasExit(network, nodeByCoord.get(key(s.finish)), closed)) problems.push(`tracé ${i + 1} : arrivée bloquée par une autre spéciale`);
+    // Point stop (dans les deux sens) : la route qui suit mène ailleurs sans demi-tour, sens interdit ni spéciale
+    for (const [label, st] of [["", s], [" (sens inverse)", s.reverse]]) {
+      const ahead = st?.stop?.ahead;
+      if (!ahead) continue;
+      const node = nodeByCoord.get(key(ahead.node));
+      const behind = new Set([...closed, ...st.stop.path.map(key).filter((k) => nodeByCoord.has(k)).map((k) => nodeByCoord.get(k))]);
+      behind.delete(node);
+      if (node === undefined || !escapes(network, node, behind)) {
+        problems.push(`tracé ${i + 1}${label} : point stop sans issue, les autres spéciales fermées`);
+      }
+    }
   });
+  return problems;
+}
+
+/**
+ * Liaisons dans l'ordre proposé, calculées comme le serveur (zone, puis zones élargies sans compromis, puis
+ * compromis) : jamais de demi-tour au point stop
+ */
+async function checkLiaisons(stages, network, widerNetworks) {
+  const asStage = (s) => ({ start: s.start, finish: s.finish, stop: s.stop, coordinates: s.geometry.coordinates });
+  const list = stages.map(asStage);
+  const liaisons = computeLiaisons(network, list, { maxTier: CLEAN_TIERS });
+  const failed = () => new Set(liaisons.filter((l) => !l.ok).map((l) => l.from));
+  for (const wider of widerNetworks) {
+    if (failed().size === 0) break;
+    const zone = await wider();
+    if (zone.error) break;
+    for (const l of computeLiaisons(zone.network, list, { only: failed(), maxTier: CLEAN_TIERS })) if (l.ok) liaisons[l.from] = l;
+  }
+  if (failed().size) for (const l of computeLiaisons(network, list, { only: failed() })) liaisons[l.from] = l;
+  const problems = [];
+  for (const l of liaisons) {
+    if (!l.ok) problems.push(`liaison ES${l.from + 1} → ES${l.to + 1} impossible`);
+    else if (l.warnings.includes("demi-tour après le point stop")) problems.push(`liaison ES${l.from + 1} → ES${l.to + 1} : demi-tour après le point stop`);
+  }
   return problems;
 }
 
@@ -353,9 +390,11 @@ async function validateCommune([name, postal, radiusKm, profile], index) {
 
         let result = { stages: [] };
         let zone = null;
+        let zoneKm = radiusKm;
         let genMs = 0;
         for (const r of searchRadii(radiusKm)) {
           zone = await networkFor(r);
+          zoneKm = r;
           if (zone.error === "zone trop dense") break;
           if (zone.error) continue;
           const t = Date.now();
@@ -385,6 +424,7 @@ async function validateCommune([name, postal, radiusKm, profile], index) {
             ...(Math.abs(stage.reverse.stats.lengthKm - stage.stats.lengthKm) > 0.05 ? [`tracé ${i + 1} : longueur différente en sens inverse`] : []),
           ]),
           ...checkAlternatives(result.stages, zone),
+          ...(await checkLiaisons(result.stages, network, searchRadii(zoneKm).slice(1).map((rr) => () => networkFor(rr)))),
         ];
         if (genMs > MAX_GENERATE_MS) problems.push(`génération lente (${genMs} ms)`);
 

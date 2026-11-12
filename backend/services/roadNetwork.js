@@ -292,6 +292,7 @@ class Branch {
  * - linkKm[id] / linkSpeed[id] / linkOneWay[id] : longueur, vitesse estimée (km/h) et sens de circulation (liaisons)
  * - nodes[i].branches : toutes les routes du carrefour { seg, kind, shape } pour les tulipes
  * - nodes[i].anchor : nœud relié au "reste du monde" (grand axe, agglomération, bord de la zone)
+ * - nodes[i].border : nœud au bord de la zone téléchargée (sa route continue au-delà)
  *
  * @param {Array} segments - Tronçons (voir bdtopo.compactSegment)
  * @param {{lat: number, lon: number}} center - Origine de la projection locale
@@ -324,7 +325,7 @@ function buildNetwork(segments, center, { consume = false } = {}) {
     if (idx === undefined) {
       idx = nodes.length;
       nodeIndex.set(key, idx);
-      nodes.push({ coord: [c[0], c[1]], edges: [], links: [], linkIds: [], branches: [], roadDegree: 0, anchor: false });
+      nodes.push({ coord: [c[0], c[1]], edges: [], links: [], linkIds: [], branches: [], roadDegree: 0, anchor: false, border: false });
     }
     return idx;
   };
@@ -454,6 +455,7 @@ function markBorderAnchors(nodes, projection) {
   xy.forEach(([x, y], i) => {
     if (x - x0 < BORDER_KM || x1 - x < BORDER_KM || y - y0 < BORDER_KM || y1 - y < BORDER_KM) {
       nodes[i].anchor = true;
+      nodes[i].border = true;
     }
   });
 }

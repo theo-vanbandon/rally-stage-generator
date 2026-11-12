@@ -9,6 +9,7 @@
  */
 const { haversineKm, bearing, signedAngle, createRng } = require("../utils/geometry");
 const { headingDeg, pointAtLength, curveLength, roadCurve } = require("../utils/curve");
+const { canDrive } = require("./liaisons");
 
 // pref : préférence par revêtement (0 = interdit)
 // unpaved : part de terre (empierré + chemin) exigée ; relaxedMin : plancher accepté si la zone en manque
@@ -273,6 +274,34 @@ function exitPath(network, from, stageNodes) {
     }
   }
   return null;
+}
+
+/**
+ * Sortie RÉELLE vers le reste du monde, pour le point stop et les spéciales d'un même rallye (toutes fermées en même
+ * temps) : en respectant les sens interdits et sans passer par un carrefour fermé, jusqu'au bord de la zone ou un
+ * réseau assez vaste pour mener ailleurs. Plus exigeant que hasExit : un grand axe ou un bourg ne suffit pas, il peut
+ * lui-même buter sur une autre spéciale (petite poche enfermée entre deux spéciales).
+ * `inbound` : on cherche au contraire à ARRIVER au nœud (accès au départ).
+ */
+function escapes(network, from, closed, { inbound = false } = {}) {
+  const { nodes } = network;
+  if (nodes[from].border) return true;
+  const seen = new Set([from]);
+  const queue = [from];
+  for (let head = 0; head < queue.length; head++) {
+    const cur = queue[head];
+    const { links, linkIds } = nodes[cur];
+    for (let k = 0; k < links.length; k++) {
+      const next = links[k];
+      if (seen.has(next) || closed.has(next)) continue;
+      if (!canDrive(network, linkIds[k], inbound ? next : cur)) continue;
+      if (nodes[next].border) return true;
+      seen.add(next);
+      if (seen.size >= EXIT_WIDE_NETWORK_NODES) return true;
+      queue.push(next);
+    }
+  }
+  return false;
 }
 
 /**
@@ -1234,12 +1263,19 @@ function linkCoords(network, link, fromNode) {
 
 /**
  * Point stop : on prolonge après l'arrivée lancée sur 300 m environ, comme le ferait un organisateur :
- *  - jamais dans une impasse : une route n'est prise que si, depuis son bout, on peut rejoindre le reste du réseau
- *    sans revenir en arrière ni emprunter la spéciale (sinon la liaison suivante commencerait par un demi-tour) ;
+ *  - jamais dans une impasse : une route n'est prise que si, depuis son bout, on peut rejoindre le reste du monde
+ *    sans revenir en arrière, sans prendre de sens interdit et sans passer par AUCUNE spéciale du rallye (`closed`,
+ *    toutes fermées en même temps) ; sinon la liaison suivante commencerait par un demi-tour ;
  *  - parmi ces routes, on continue au plus droit, en préférant la route la plus importante.
+ * Si aucune route ne convient (ne devrait pas arriver : la sélection des spéciales l'exige), on revient à la règle
+ * souple : sortie vers un grand axe ou un bourg, sans tenir compte des autres spéciales ni des sens interdits.
  * `ahead` : suite de la route après le point stop (jusqu'au prochain carrefour), départ de la liaison suivante.
  */
-function findStopPoint(network, finishNode, stageNodes) {
+function findStopPoint(network, finishNode, stageNodes, closed = stageNodes) {
+  return stopAlong(network, finishNode, stageNodes, closed, true) ?? stopAlong(network, finishNode, stageNodes, closed, false);
+}
+
+function stopAlong(network, finishNode, stageNodes, closed, strict) {
   const { nodes, linkSpeed } = network;
   const coords = [nodes[finishNode].coord];
   const used = new Set([finishNode]);
@@ -1249,8 +1285,9 @@ function findStopPoint(network, finishNode, stageNodes) {
   let firstSeg = null;
   let ahead = null;
 
-  // La route vers `next` mène-t-elle quelque part ? (grand axe, agglomération, bord de zone ou réseau assez vaste)
+  // La route vers `next` mène-t-elle quelque part ?
   const leadsSomewhere = (next) => {
+    if (strict) return escapes(network, next, { has: (n) => closed.has(n) || stageNodes.has(n) || used.has(n) });
     if (nodes[next].anchor) return true;
     const blocked = { has: (n) => stageNodes.has(n) || used.has(n) };
     return exitPath(network, next, blocked) !== null;
@@ -1264,6 +1301,7 @@ function findStopPoint(network, finishNode, stageNodes) {
     for (let k = 0; k < links.length; k++) {
       const next = links[k];
       if (used.has(next) || stageNodes.has(next)) continue;
+      if (strict && (closed.has(next) || !canDrive(network, linkIds[k], node))) continue;
       if (!leadsSomewhere(next)) continue;
       const pts = linkCoords(network, linkIds[k], node);
       const turn = heading === null ? 0 : Math.abs(signedAngle(heading, bearing(pts[0], pts[Math.min(1, pts.length - 1)])));
@@ -1342,7 +1380,7 @@ function loopStats(loopSteps, kmAt, coordAt) {
   return { kind: "junction", fromKm: round2(kmAt(p0)), lengthKm: round2(kmAt(p1) - kmAt(p0)), coord: coordAt(p0) };
 }
 
-function describeStage(network, prefs, candidate) {
+function describeStage(network, prefs, candidate, { closed = null } = {}) {
   const { nodes, edges, projection } = network;
   const { usableDegree } = prefs;
   const { steps } = candidate.walk;
@@ -1516,7 +1554,7 @@ function describeStage(network, prefs, candidate) {
   const lastStep = steps.at(-1);
   const lastEdge = edges[lastStep.edge];
   const finishNode = lastStep.forward ? lastEdge.b : lastEdge.a;
-  const stop = findStopPoint(network, finishNode, candidate.walk.visited);
+  const stop = findStopPoint(network, finishNode, candidate.walk.visited, closed ?? candidate.walk.visited);
   const finishTulip = stop
     ? buildTulip({
         branches: nodes[finishNode].branches,
@@ -1682,12 +1720,14 @@ function generateStages(network, { surface = "asphalt", length = "medium", seed 
 
   const { chosen, exhausted } = selectStages(network, candidates, resolveAvoided(network, candidates, avoid), rng);
   rememberShown(network, chosen);
+  // Les spéciales du rallye sont fermées en même temps : le point stop de chacune doit mener ailleurs sans les croiser
+  const closed = rallyNodes(network, chosen);
 
   return {
     // Chaque spéciale est livrée avec son sens inverse : même tracé, roadbook et statistiques recalculés
     stages: chosen.map((c) => ({
-      ...describeStage(network, prefs, c),
-      reverse: describeStage(network, prefs, reverseCandidate(c)),
+      ...describeStage(network, prefs, c, { closed }),
+      reverse: describeStage(network, prefs, reverseCandidate(c), { closed }),
     })),
     relaxed,
     surfaceRelaxed,
@@ -1725,10 +1765,10 @@ function rememberShown(network, chosen) {
 }
 
 /** Sélection gloutonne (candidats triés par note) de tracés se recouvrant à moins de maxOverlap */
-function greedyDistinct(candidates, maxOverlap, edges) {
+function greedyDistinct(candidates, maxOverlap, edges, accept = () => true) {
   const distinct = [];
   for (const c of candidates) {
-    if (distinct.every((d) => overlapShare(c, d, edges) < maxOverlap)) distinct.push(c);
+    if (distinct.every((d) => overlapShare(c, d, edges) < maxOverlap) && accept(c)) distinct.push(c);
     if (distinct.length >= SHORTLIST) break;
   }
   return distinct;
@@ -1788,10 +1828,31 @@ function tooClose(fa, fb, gapKm) {
   return false;
 }
 
+/** Carrefours de toutes les spéciales retenues (fermées en même temps le jour du rallye) */
+function rallyNodes(network, chosen) {
+  const closed = new Set();
+  for (const c of chosen) {
+    for (const n of footprint(network, c).nodes) closed.add(n);
+    for (const n of c.walk.visited ?? []) closed.add(n);
+  }
+  return closed;
+}
+
+/**
+ * Une spéciale se court-elle dans les deux sens, toutes les spéciales fermées ? On doit pouvoir arriver à son départ
+ * et repartir de son arrivée (point stop puis liaison) sans demi-tour, sens interdit ni traversée d'une spéciale.
+ */
+const rallyAccessOk = (network, s, closed) =>
+  escapes(network, s.walk.startNode, closed, { inbound: true }) &&
+  escapes(network, s.walk.endNode, closed) &&
+  // Sens inverse : l'arrivée devient le départ et inversement
+  escapes(network, s.walk.endNode, closed, { inbound: true }) &&
+  escapes(network, s.walk.startNode, closed);
+
 /**
  * Une alternative peut-elle rejoindre les tracés déjà retenus ? Les spéciales d'un même rallye sont fermées en même
  * temps : aucun carrefour en commun, assez d'écart, et chaque départ reste accessible, chaque arrivée garde une
- * sortie, sans emprunter AUCUNE des spéciales.
+ * sortie (point stop compris), sans emprunter AUCUNE des spéciales.
  */
 function compatibleStage(network, c, chosen, gapKm) {
   const fc = footprint(network, c);
@@ -1800,11 +1861,8 @@ function compatibleStage(network, c, chosen, gapKm) {
     for (const n of fc.nodes) if (fo.nodes.has(n)) return false;
     if (tooClose(fc, fo, gapKm)) return false;
   }
-  const closed = new Set(fc.nodes);
-  for (const o of chosen) for (const n of footprint(network, o).nodes) closed.add(n);
-  return [c, ...chosen].every(
-    (s) => hasExit(network, s.walk.startNode, closed) && hasExit(network, s.walk.endNode, closed)
-  );
+  const closed = rallyNodes(network, [c, ...chosen]);
+  return [c, ...chosen].every((s) => rallyAccessOk(network, s, closed));
 }
 
 /**
@@ -1839,8 +1897,11 @@ function selectStages(network, candidates, avoided, rng) {
     pool = [...candidates].sort((a, b) => seenRank(a) - seenRank(b));
   }
 
-  // La spéciale principale est tirée parmi les meilleures (pondéré par le rang) : qualité + variété
-  const shortlist = greedyDistinct(pool, tier, edges).slice(0, SHORTLIST);
+  // La spéciale principale est tirée parmi les meilleures (pondéré par le rang) : qualité + variété. Seule ou non,
+  // elle doit se courir dans les deux sens (accès au départ, arrivée et point stop ouverts, sens interdits compris)
+  const soloOk = (c) => (c.soloOk ??= rallyAccessOk(network, c, rallyNodes(network, [c])));
+  let shortlist = greedyDistinct(pool, tier, edges, soloOk).slice(0, SHORTLIST);
+  if (!shortlist.length) shortlist = greedyDistinct(pool, tier, edges).slice(0, SHORTLIST);
   const main = pickWeighted(shortlist, shortlist.map((_, i) => 1 / (i + 1)), rng);
 
   const chosen = [main];
@@ -1873,6 +1934,7 @@ module.exports = {
   LOOP_PRESETS,
   hasExit,
   exitPath,
+  escapes,
   buildTulip,
   junctionNotes,
   describeStage,
