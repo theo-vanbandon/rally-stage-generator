@@ -25,7 +25,20 @@ describe('SpecialeStats Component', () => {
 
   test('devrait détailler le revêtement', () => {
     render(<SpecialeStats stats={stats} />);
-    expect(screen.getByText('80 % asphalte · 20 % terre')).toBeInTheDocument();
+    expect(screen.getByText('Mixte')).toBeInTheDocument();
+    expect(screen.getByText('80 %')).toBeInTheDocument();
+    expect(screen.getByText('asphalte')).toBeInTheDocument();
+    expect(screen.getByText('20 %')).toBeInTheDocument();
+    expect(screen.getByText('terre')).toBeInTheDocument();
+    expect(screen.queryByText('chemin')).not.toBeInTheDocument();
+  });
+
+  test('devrait afficher un revêtement unique sans barre ni « Mixte »', () => {
+    const { container } = render(<SpecialeStats stats={{ ...stats, surfacePct: { paved: 100, gravel: 0, dirt: 0 } }} />);
+    expect(screen.queryByText('Mixte')).not.toBeInTheDocument();
+    expect(screen.getByText('asphalte')).toBeInTheDocument();
+    expect(screen.getByText('100 %')).toBeInTheDocument();
+    expect(container.querySelector('.surface-bar')).toBeNull();
   });
 
   test('devrait masquer les altitudes si absentes', () => {
@@ -42,6 +55,14 @@ describe('SpecialeStats Component', () => {
     expect(screen.getByText('dès le km 2.9')).toBeInTheDocument();
     rerender(<SpecialeStats stats={{ ...stats, loop: { kind: 'shared', sharedFromKm: 2, sharedKm: 0.82, fromKm: 2.82, lengthKm: 3.4, coord: [2.8, 50.6] } }} />);
     expect(screen.getByText('+ portion commune 0.8 km × 2')).toBeInTheDocument();
+  });
+
+  test('devrait centrer la dernière case seulement si elle est seule sur sa ligne', () => {
+    const { container, rerender } = render(<SpecialeStats stats={{ ...stats, urbanPct: 4 }} />);
+    expect(screen.getByText('Traversée de hameau')).toBeInTheDocument();
+    expect(container.querySelectorAll('.speciale-stats .stat')).toHaveLength(8);
+    rerender(<SpecialeStats stats={{ ...stats, urbanPct: 0 }} />);
+    expect(container.querySelectorAll('.speciale-stats .stat')).toHaveLength(7);
   });
 
   test('ne devrait rien afficher si stats est null', () => {

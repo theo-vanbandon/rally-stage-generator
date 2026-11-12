@@ -30,3 +30,120 @@
   font-weight: 400;
   font-size: 0.8rem;
 }
+
+/* Nombre impair de cases : la dernière, seule sur sa ligne, est centrée (même largeur que les autres) */
+.speciale-stats .stat:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: calc(50% - 0.25rem);
+}
+
+/* Revêtement : sous les cases, en plus grand, avec pictogrammes */
+.speciale-stats-group {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.surface-breakdown {
+  --surface-paved: #e53935;
+  --surface-gravel: #6d4127;
+  padding: 0.7rem 0.8rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+@media (prefers-color-scheme: dark) {
+  .surface-breakdown {
+    --surface-paved: #ff5a4f;
+    --surface-gravel: #b07a52;
+  }
+}
+
+.surface-breakdown header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.surface-breakdown-title {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.surface-breakdown-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.surface-icon {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.surface-bar {
+  display: flex;
+  gap: 2px;
+  height: 0.5rem;
+  margin-top: 0.6rem;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.surface-bar span {
+  flex-basis: 0;
+  min-width: 4px;
+}
+
+.surface-bar--paved {
+  background: var(--surface-paved);
+}
+
+.surface-bar--gravel {
+  background: var(--surface-gravel);
+}
+
+.surface-bar--dirt {
+  background: repeating-linear-gradient(90deg, var(--surface-gravel) 0 6px, transparent 6px 10px);
+}
+
+.surface-breakdown ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  gap: 0.5rem 1rem;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.surface-breakdown li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.surface-breakdown li .surface-icon {
+  width: 2.1rem;
+  height: 2.1rem;
+}
+
+.surface-share {
+  display: grid;
+}
+
+.surface-share strong {
+  font-size: 1.5rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.surface-share span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
