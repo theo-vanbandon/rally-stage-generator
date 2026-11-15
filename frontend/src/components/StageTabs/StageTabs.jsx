@@ -35,9 +35,20 @@ export function dropPosition(rects, from, dx) {
   return position;
 }
 
+/** Poignée « six points » : signale que l'onglet se déplace */
+function Grip() {
+  return (
+    <svg className="stage-tab-grip" viewBox="0 0 6 10" aria-hidden="true" focusable="false">
+      {[1, 5].flatMap((cx) => [1, 5, 9].map((cy) => <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1" />))}
+    </svg>
+  );
+}
+
 /**
  * Onglets des tracés, dans l'ordre du rallye (ES1, ES2…). Un clic sélectionne le tracé ; un glisser horizontal
  * change l'ordre, sur un rail : l'onglet ne quitte pas la barre. Clavier : Alt + ← / → déplace l'onglet.
+ * Pour que ce soit visible sans le savoir : un libellé, une poignée sur chaque onglet, des chevrons entre les
+ * onglets (c'est une suite) et des boutons ‹ › qui déplacent l'ES sélectionnée (utile sur mobile).
  */
 export default function StageTabs({ stages, order, selectedIndex, reversedTraces, onSelect, onReorder }) {
   const railRef = useRef(null);
@@ -97,50 +108,86 @@ export default function StageTabs({ stages, order, selectedIndex, reversedTraces
     onReorder(moveItem(order, position, to));
   };
 
+  const selectedPosition = order.indexOf(selectedIndex);
+  const moveSelected = (step) => onReorder(moveItem(order, selectedPosition, selectedPosition + step));
+
   return (
-    <div
-      className={`proposals stage-tabs${drag?.moved ? " dragging" : ""}`}
-      role="tablist"
-      aria-label="Tracés proposés, dans l'ordre du rallye (glisser pour changer l'ordre)"
-      ref={railRef}
-    >
-      {order.map((trace, position) => {
-        const s = stages[trace];
-        const isDragged = drag?.moved && drag.position === position;
-        return (
-          <button
-            key={s.id}
-            type="button"
-            role="tab"
-            aria-selected={trace === selectedIndex}
-            aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-            className={`${trace === selectedIndex ? "selected" : ""}${isDragged ? " dragged" : ""}`}
-            style={{ transform: `translateX(${shiftOf(position)}px)` }}
-            onPointerDown={(e) => startDrag(e, position)}
-            onPointerMove={moveDrag}
-            onPointerUp={() => endDrag(trace)}
-            onPointerCancel={() => setDrag(null)}
-            onClick={(e) => {
-              // Clic au clavier (Entrée, Espace) : pas de pointeur
-              if (e.detail === 0) onSelect(trace);
-            }}
-            onKeyDown={(e) => onKeyDown(e, position)}
-          >
-            <span className="stage-tab-es">ES{preview.indexOf(trace) + 1}</span>
-            <strong>Tracé {trace + 1}</strong>
-            <small>
-              {s.stats.lengthKm.toFixed(1)} km{reversedTraces.includes(trace) ? " · inverse" : ""}
-            </small>
-          </button>
-        );
-      })}
+    <div className="stage-order">
+      <div className="stage-order-head">
+        <span className="stage-order-hint">
+          <strong>Ordre du rallye</strong> · glisse les onglets
+        </span>
+        {selectedPosition >= 0 && (
+          <span className="stage-order-move">
+            <span aria-hidden="true">ES{selectedPosition + 1}</span>
+            <button
+              type="button"
+              onClick={() => moveSelected(-1)}
+              disabled={selectedPosition === 0}
+              aria-label={`Courir l'ES${selectedPosition + 1} plus tôt`}
+              title="Plus tôt dans la journée"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => moveSelected(1)}
+              disabled={selectedPosition === order.length - 1}
+              aria-label={`Courir l'ES${selectedPosition + 1} plus tard`}
+              title="Plus tard dans la journée"
+            >
+              ›
+            </button>
+          </span>
+        )}
+      </div>
+      <div
+        className={`proposals stage-tabs${drag?.moved ? " dragging" : ""}`}
+        role="tablist"
+        aria-label="Tracés proposés, dans l'ordre du rallye (glisser pour changer l'ordre)"
+        ref={railRef}
+      >
+        {order.map((trace, position) => {
+          const s = stages[trace];
+          const isDragged = drag?.moved && drag.position === position;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              role="tab"
+              aria-selected={trace === selectedIndex}
+              aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+              className={`${trace === selectedIndex ? "selected" : ""}${isDragged ? " dragged" : ""}`}
+              style={{ transform: `translateX(${shiftOf(position)}px)` }}
+              onPointerDown={(e) => startDrag(e, position)}
+              onPointerMove={moveDrag}
+              onPointerUp={() => endDrag(trace)}
+              onPointerCancel={() => setDrag(null)}
+              onClick={(e) => {
+                // Clic au clavier (Entrée, Espace) : pas de pointeur
+                if (e.detail === 0) onSelect(trace);
+              }}
+              onKeyDown={(e) => onKeyDown(e, position)}
+            >
+              <span className="stage-tab-es">
+                <Grip />
+                ES{preview.indexOf(trace) + 1}
+              </span>
+              <strong>Tracé {trace + 1}</strong>
+              <small>
+                {s.stats.lengthKm.toFixed(1)} km{reversedTraces.includes(trace) ? " · inverse" : ""}
+              </small>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 StageTabs.propTypes = {
   stages: PropTypes.arrayOf(
-    PropTypes.shape({ id: PropTypes.string, stats: PropTypes.shape({ lengthKm: PropTypes.number }) })
+    PropTypes.shape({ id: PropTypes.string, stats: PropTypes.shape({ lengthKm: PropTypes.number }) }),
   ).isRequired,
   order: PropTypes.arrayOf(PropTypes.number).isRequired,
   selectedIndex: PropTypes.number.isRequired,

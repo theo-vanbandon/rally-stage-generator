@@ -25,10 +25,104 @@
 }
 
 .stage-tab-es {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: var(--accent);
+}
+
+/* Poignée : discrète, plus marquée au survol */
+.stage-tab-grip {
+  width: 0.4rem;
+  height: 0.65rem;
+  fill: var(--text-muted);
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.stage-tabs button:hover .stage-tab-grip,
+.stage-tabs button.dragged .stage-tab-grip {
+  opacity: 1;
+}
+
+/* Chevrons entre les onglets : c'est une suite (ES1 › ES2 › ES3) */
+/* .proposals (RouteGenerator.css) est chargé après : sélecteur plus précis */
+.proposals.stage-tabs {
+  gap: 0.9rem;
+}
+
+.stage-tabs button + button::before {
+  content: "›";
+  position: absolute;
+  top: 50%;
+  left: -0.62rem;
+  transform: translate(-50%, -50%);
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Pendant un glisser, les onglets bougent : les chevrons suivraient de travers */
+.stage-tabs.dragging button::before {
+  opacity: 0;
+}
+
+/* Libellé et boutons ‹ › au-dessus du rail */
+.stage-order {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.stage-order-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.stage-order-hint strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.stage-order-move {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 700;
+}
+
+.stage-order-move button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stage-order-move button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.stage-order-move button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 @media (prefers-reduced-motion: reduce) {

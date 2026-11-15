@@ -71,4 +71,26 @@ describe('StageTabs', () => {
     fireEvent.keyDown(screen.getByRole('tab', { name: /Tracé 3/ }), { key: 'ArrowRight' });
     expect(onReorder).toHaveBeenCalledTimes(1); // sans Alt : rien
   });
+
+  test("explique que l'ordre se change en glissant les onglets", () => {
+    render(<StageTabs stages={stages} order={[0, 1, 2]} selectedIndex={0} reversedTraces={[]} onSelect={() => {}} onReorder={() => {}} />);
+    expect(screen.getByText('Ordre du rallye')).toBeInTheDocument();
+    expect(screen.getByText(/glisse les onglets/)).toBeInTheDocument();
+  });
+
+  test("les boutons ‹ › déplacent l'ES sélectionnée, sans sortir du rail", () => {
+    const onReorder = jest.fn();
+    const { rerender } = render(
+      <StageTabs stages={stages} order={[1, 0, 2]} selectedIndex={0} reversedTraces={[]} onSelect={() => {}} onReorder={onReorder} />
+    );
+    // Tracé 1 sélectionné, couru en ES2
+    fireEvent.click(screen.getByRole('button', { name: "Courir l'ES2 plus tôt" }));
+    expect(onReorder).toHaveBeenLastCalledWith([0, 1, 2]);
+    fireEvent.click(screen.getByRole('button', { name: "Courir l'ES2 plus tard" }));
+    expect(onReorder).toHaveBeenLastCalledWith([1, 2, 0]);
+    // En tête : impossible d'avancer encore
+    rerender(<StageTabs stages={stages} order={[0, 1, 2]} selectedIndex={0} reversedTraces={[]} onSelect={() => {}} onReorder={onReorder} />);
+    expect(screen.getByRole('button', { name: "Courir l'ES1 plus tôt" })).toBeDisabled();
+    expect(screen.getByRole('button', { name: "Courir l'ES1 plus tard" })).toBeEnabled();
+  });
 });
