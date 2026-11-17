@@ -27,7 +27,7 @@ import { createZip } from "../utils/zip";
  * @param {Blob} blob - Contenu du fichier
  * @param {string} filename - Nom du fichier
  */
-function downloadFile(blob, filename) {
+export function downloadFile(blob, filename) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;

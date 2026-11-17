@@ -18,7 +18,7 @@ const { buildTulip, groupBranches, junctionNotes, turnLabel, walkMetres, BRANCH_
 const TURN_DEG = 30; // en deçà on suit la route : pas de case, sauf changement de route ou fourche
 const FORK_DEG = 35; // une autre route à moins de 35° de la nôtre : il faut dire laquelle prendre
 const MERGE_DEG = 35; // rond-point : branches à moins de 35° l'une de l'autre = une seule route (deux chaussées)
-const MIN_GAP_DEG = 30; // tulipe de liaison : écart minimal dessiné entre la flèche et une autre route
+const MIN_GAP_DEG = 40; // tulipe de liaison : écart minimal dessiné entre la flèche (tête comprise) et une autre route
 const SAME_DIR_DEG = 20; // tulipe de liaison : routes à moins de 20° l'une de l'autre = une seule
 const NEAR_CASE_KM = 0.06; // deux cases à moins de 60 m : la moins utile s'efface
 const MINOR_DEG = 55; // en deçà : « tout droit » ou « légèrement » (voir turnLabel)
@@ -195,7 +195,6 @@ function liaisonRoadbook(network, { lead, path, entryLink, uturn, nodeNotes, fro
     tulip.others = tulip.others.filter((o) => !isTwin(o)).map(({ seg, ...o }) => o);
     // Même route, une chaussée devenue « 2 chaussées » : ce n'est pas « prendre la route principale »
     if (sameRoad(roadIn, roadOut) && tulip.entry) tulip.exitKind = tulip.entry;
-    schematize(tulip);
     const imposed = groupNodes.flatMap((n) => nodeNotes.get(n) ?? []);
     const startUturn = uturn && k === 0;
     const needed =
@@ -207,6 +206,8 @@ function liaisonRoadbook(network, { lead, path, entryLink, uturn, nodeNotes, fro
       (tulip.others.some((o) => o.kind === "major") && tulip.entry !== "major" && tulip.exitKind !== "major");
     if (!needed) return null;
     const { notes, danger } = junctionNotes(tulip);
+    // Dessin schématique seulement maintenant : la fourche se juge sur les vrais angles
+    schematize(tulip);
     return {
       type: "junction",
       km: round2(kmAt(k)),

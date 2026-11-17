@@ -517,3 +517,40 @@ describe('point stop et autres spéciales du rallye', () => {
     expect(escapes(network, nodeAt(at(0.01, 0)), own, { inbound: true })).toBe(true);
   });
 });
+
+describe('tulipes : lisibilité du dessin', () => {
+  const { buildTulip } = require('../../services/stageGenerator');
+  const line = (deg, m = 60) => {
+    const a = (deg * Math.PI) / 180;
+    return Array.from({ length: 12 }, (_, i) => [Math.sin(a) * ((i + 1) * m) / 12, Math.cos(a) * ((i + 1) * m) / 12]);
+  };
+  const bearing = (path) => (Math.atan2(path.at(-1)[0], path.at(-1)[1]) * 180) / Math.PI;
+  const entryPts = line(180);
+
+  test('une route qui part presque dans l’axe de la flèche est écartée (dessin), son angle reste le vrai', () => {
+    const tulip = buildTulip({
+      branches: [{ seg: 1, kind: 'road', pts: line(180) }, { seg: 2, kind: 'road', pts: line(0) }, { seg: 3, kind: 'road', pts: line(12) }],
+      entryPts,
+      exitPts: line(0),
+      entrySeg: 1,
+      exitSeg: 2,
+    });
+    const [other] = tulip.others;
+    expect(Math.abs(other.angle - 12)).toBeLessThanOrEqual(2);
+    expect(bearing(other.path) - bearing(tulip.exitPath)).toBeGreaterThanOrEqual(34);
+  });
+
+  test('une flèche qui tourne court (carrefour décalé) va jusqu’au bord de la tulipe', () => {
+    // 15 m tout droit, puis à gauche
+    const exitPts = [...Array.from({ length: 5 }, (_, i) => [0, (i + 1) * 3]), ...Array.from({ length: 15 }, (_, i) => [-(i + 1) * 3, 15])];
+    const tulip = buildTulip({
+      branches: [{ seg: 1, kind: 'road', pts: line(180) }, { seg: 2, kind: 'road', pts: exitPts }],
+      entryPts,
+      exitPts,
+      entrySeg: 1,
+      exitSeg: 2,
+    });
+    const end = tulip.exitPath.at(-1);
+    expect(Math.hypot(...end)).toBeGreaterThanOrEqual(0.79);
+  });
+});

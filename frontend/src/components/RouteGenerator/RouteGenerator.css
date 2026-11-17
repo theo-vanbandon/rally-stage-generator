@@ -371,29 +371,31 @@ button.primary:disabled {
   }
 }
 
-/* Roadbook : impression */
-.print-actions {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
+/* Roadbook : téléchargement (popup) */
+.download-roadbook {
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.print-button {
-  min-width: 3.5rem;
-  padding: 0.55rem;
-  border: 1px solid var(--text);
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.6rem;
+  padding: 0.75rem;
+  border: 0;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
 }
 
-.print-button:hover {
-  background: var(--surface-sunken);
+.download-roadbook:hover {
+  background: var(--accent-strong);
+}
+
+.download-roadbook span {
+  font-size: 1.2rem;
+  line-height: 1;
 }
 
 /* Sens inverse */

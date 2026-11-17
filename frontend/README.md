@@ -9,7 +9,7 @@ Interface React du générateur de spéciales de rallye.
 - 3 tracés proposés par génération, cliquables sur la carte. Leurs onglets donnent l'ordre du rallye (ES1, ES2, ES3) : on le change en faisant glisser un onglet sur sa barre (rail horizontal, l'onglet n'en sort pas), ou avec Alt + ← / →. L'ordre est retenu dans le lien partagé (`o=2,3,1`).
 - Liaisons entre les ES, dessinées en violet sur la carte : du point stop d'une spéciale au départ de la suivante, sens interdits respectés ; distance et temps estimé de chaque liaison et total, recalculés à chaque changement d'ordre ou de sens. Une liaison est toujours proposée : quand elle ne peut pas éviter toutes les spéciales (demi-tour au stop, traversée, portion empruntée), elle est en pointillés et le compromis est indiqué (⚠). Un badge « ES n » marque le départ de chaque spéciale.
 - Les tracés sont réalisables le même jour : ils ne se croisent pas, sont écartés d'au moins 500 m (250 m sur une petite zone) et aucun ne bloque l'accès au départ ou à l'arrivée d'un autre
-- Sens inverse en un clic, propre à chaque tracé : même tracé à l'envers, avec son propre roadbook, profil et point stop ; le sens choisi vaut aussi pour l'impression et les exports
+- Sens inverse en un clic, propre à chaque tracé : même tracé à l'envers, avec son propre roadbook, profil et point stop ; le sens choisi vaut aussi pour le roadbook PDF et les exports
 - Option **boucle**, deux types :
   - **carrefour** : on repasse une fois par un même carrefour, entouré sur la carte (badge « 2× ») ;
   - **portion commune** : un tronçon est parcouru deux fois dans le même sens ; il est surligné en bleu, avec un badge « 2× ».
@@ -23,7 +23,8 @@ Interface React du générateur de spéciales de rallye.
 - **Vigilance eau (plongeurs)** : endroits où une sortie de route peut finir dans une étendue d'eau importante (lac, étang, grande rivière), sur la carte (pictogramme vague) et dans une liste cliquable. Au plus un point « plongeurs recommandés » par spéciale, le plus exposé (eau à l'extérieur d'un virage ou après une portion rapide) ; les fossés et petits cours d'eau sont ignorés
 - Profil d'altitude interactif (le survol positionne un repère sur la carte)
 - Roadbook d'organisation : cases numérotées (total / partiel), tulipes, dangers, CH/départ, arrivée lancée, point stop ; un clic centre la carte sur la case, dont le point grossit (avec une onde) et affiche son étiquette ; à l'inverse, cliquer un point de la carte surligne sa case dans le roadbook
-- Impression du roadbook en A5 ou A4 (ou PDF via « Enregistrer en PDF »), avec n° et nom de l'ES
+- Roadbook des liaisons (point stop → CH de l'ES suivante), choisi dans un sélecteur ES1 · L1 · ES2… ; temps imparti selon une moyenne réglable
+- Téléchargement du roadbook en PDF (A5 ou A4) : popup pour choisir les spéciales et liaisons (dans l'ordre du rallye), nommer les ES (« ES1 » par défaut) et remplir la page de garde (nom du rallye, ville d'accueil, ordre du rallye, totaux, plan d'ensemble). Fichier vectoriel généré dans le navigateur (jsPDF, chargé seulement au téléchargement)
 - Export **GPX**, **KML** et **GeoJSON** :
   - on coche les tracés à exporter (le tracé affiché par défaut, jusqu'aux 3), chacun dans son sens ; KML et GeoJSON : un seul fichier ; GPX : un fichier par spéciale, regroupés dans une archive `.zip` s'il y en a plusieurs ;
   - waypoints : départ, arrivée, point stop, et un waypoint par carrefour de boucle, qui décrit ses deux passages (« 1er passage, km 2.85 : à gauche vers R DES FRENES (entrée dans la boucle) », puis le 2e) ;
@@ -44,11 +45,13 @@ frontend/src/
 │   ├── ElevationProfile/ # Profil altimétrique SVG
 │   ├── LegalNotice/      # Mentions légales
 │   ├── Roadbook/         # Roadbook à l'écran (cases + symboles)
-│   ├── RoadbookPrint/    # Roadbook imprimable A5
+│   ├── RoadbookPicker/   # Sélecteur du roadbook affiché (ES / liaisons)
+│   ├── RoadbookDownload/ # Popup de téléchargement du roadbook PDF
 │   └── Tulip/            # Dessin SVG d'une tulipe
 ├── services/
 │   ├── api.js            # Backend + API des communes
-│   └── exportService.js  # Export GPX / KML / GeoJSON
+│   ├── exportService.js  # Export GPX / KML / GeoJSON
+│   └── roadbookPdf.js    # Roadbook PDF (page de garde, ES, liaisons, tulipes vectorielles)
 ├── utils/
 │   └── geometry.js       # Distances, interpolation le long du tracé
 └── tests/                # Tests (Jest + React Testing Library)

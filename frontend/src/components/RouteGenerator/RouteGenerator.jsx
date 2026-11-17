@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import MapView from "../MapView";
 import SpecialeStats from "../SpecialeStats";
 import CommuneSearch from "../CommuneSearch";
 import ElevationProfile from "../ElevationProfile";
 import Roadbook from "../Roadbook";
 import RoadbookPicker from "../RoadbookPicker";
-import RoadbookPrint, { PRINT_FORMATS } from "../RoadbookPrint";
+import RoadbookDownload from "../RoadbookDownload";
 import LegalNotice from "../LegalNotice";
 import StageTabs from "../StageTabs";
 import LiaisonSummary from "../LiaisonSummary";
@@ -16,7 +15,7 @@ import useWaterPoints from "../../hooks/useWaterPoints";
 import { waterLabel } from "../../utils/water";
 import useLiaisons from "../../hooks/useLiaisons";
 import { generateStage, pingBackend } from "../../services/api";
-import { exportStages, exportFilename } from "../../services/exportService";
+import { exportStages, exportFilename, downloadFile } from "../../services/exportService";
 import { cumulativeDistances, pointAtKm } from "../../utils/geometry";
 import "./RouteGenerator.css";
 
@@ -189,7 +188,7 @@ export default function RouteGenerator() {
   const [roadbookView, setRoadbookView] = useState(null);
   const [liaisonSpeed, setLiaisonSpeed] = useState(DEFAULT_LIAISON_SPEED);
   const [copied, setCopied] = useState(false);
-  const [printFormat, setPrintFormat] = useState("a5");
+  const [downloadOpen, setDownloadOpen] = useState(false);
   // Spéciales à exporter : null = le tracé affiché ; sinon les indices cochés
   const [exportPick, setExportPick] = useState(null);
   // Mentions légales : aussi accessibles directement par l'adresse …#mentions-legales
@@ -201,11 +200,6 @@ export default function RouteGenerator() {
     window.history.replaceState(null, "", `${pathname}${search}${open ? LEGAL_HASH : ""}`);
   };
 
-  // Le format doit être appliqué (règle @page) avant d'ouvrir la fenêtre d'impression
-  const printRoadbook = (format) => {
-    flushSync(() => setPrintFormat(format));
-    window.print();
-  };
   const abortRef = useRef(null);
   // Lien partagé : tracé et sens à réafficher après la première génération
   const pendingView = useRef(
@@ -296,6 +290,54 @@ export default function RouteGenerator() {
       }),
     [rallyOrder, liaisonState]
   );
+  // Téléchargement du roadbook : épreuves dans l'ordre du rallye, chaque spéciale dans son sens
+  const downloadEntries = useMemo(
+    () =>
+      rallyOrder.flatMap((trace, position) => {
+        const s = displayedStages[trace];
+        if (!s) return [];
+        const es = {
+          key: `es-${trace}`,
+          kind: "stage",
+          label: `ES${position + 1}`,
+          detail: `${s.stats.lengthKm.toFixed(1)} km${reversedTraces.includes(trace) ? " · sens inverse" : ""}`,
+        };
+        if (position === rallyOrder.length - 1) return [es];
+        const liaison = liaisonState.liaisons.find((l) => l.from === position && l.ok && l.roadbook);
+        return [
+          es,
+          {
+            key: `l-${position}`,
+            kind: "liaison",
+            label: `L${position + 1}`,
+            title: `Liaison ES${position + 1} → ES${position + 2}`,
+            detail: liaison
+              ? `${liaison.km.toFixed(1)} km · ${impartedMinutes(liaison.km, liaisonSpeed)} min`
+              : liaisonState.status === "loading"
+                ? "calcul en cours…"
+                : "indisponible",
+            disabled: !liaison,
+          },
+        ];
+      }),
+    [rallyOrder, displayedStages, reversedTraces, liaisonState, liaisonSpeed]
+  );
+  const downloadRoadbook = async ({ keys, names, rallyName, hostTown, format }) => {
+    const { buildRoadbookPdf, roadbookFilename } = await import("../../services/roadbookPdf");
+    const speed = clampSpeed(liaisonSpeed);
+    const items = keys.map((key) => {
+      if (key.startsWith("es-")) {
+        const trace = Number(key.slice(3));
+        return { kind: "stage", number: esNumbers[trace], name: names[key], stage: displayedStages[trace], reversed: reversedTraces.includes(trace) };
+      }
+      const position = Number(key.slice(2));
+      const liaison = liaisonState.liaisons.find((l) => l.from === position && l.ok);
+      return { kind: "liaison", number: position + 1, from: position + 1, to: position + 2, liaison, minutes: impartedMinutes(liaison.km, speed), speed };
+    });
+    const doc = await buildRoadbookPdf({ format, rallyName, hostTown, items });
+    downloadFile(doc.output("blob"), roadbookFilename(rallyName, hostTown));
+  };
+
   const selectCase = (c, fly) =>
     setFocusedCase({
       ...c,
@@ -600,16 +642,11 @@ export default function RouteGenerator() {
                       selectedN={focusedCase?.view === viewKey ? focusedCase.n : null}
                       onSelect={(c) => selectCase(c, true)}
                     />
-                    <div className="print-actions">
-                      <span>Imprimer le roadbook (ou PDF) :</span>
-                      {Object.entries(PRINT_FORMATS).map(([format, { label }]) => (
-                        <button key={format} type="button" className="print-button" onClick={() => printRoadbook(format)}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
                   </>
                 )}
+                <button type="button" className="download-roadbook" onClick={() => setDownloadOpen(true)}>
+                  <span aria-hidden="true">⤓</span> Télécharger le roadbook
+                </button>
               </div>
 
               <div className="block">
@@ -701,13 +738,14 @@ export default function RouteGenerator() {
         </main>
         {legalOpen && <LegalNotice onClose={() => showLegal(false)} />}
       </div>
-      <RoadbookPrint
-        stage={viewedStage ?? stage}
-        esNumber={esNumbers[viewedTrace ?? selectedIndex] ?? 1}
-        esName={commune?.name}
-        reversed={reversedTraces.includes(viewedTrace ?? selectedIndex)}
-        format={printFormat}
-      />
+      {downloadOpen && (
+        <RoadbookDownload
+          entries={downloadEntries}
+          defaultHostTown={commune?.name ?? ""}
+          onClose={() => setDownloadOpen(false)}
+          onDownload={downloadRoadbook}
+        />
+      )}
     </>
   );
 }

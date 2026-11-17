@@ -2,7 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import RouteGenerator from '../../components/RouteGenerator';
 import { generateStage, computeLiaisons, computeWaterPoints } from '../../services/api';
-import { exportStages } from '../../services/exportService';
+import { exportStages, downloadFile } from '../../services/exportService';
+import { buildRoadbookPdf } from '../../services/roadbookPdf';
 import { mockStage } from '../fixtures/stage';
 
 // Leaflet ne fonctionne pas dans jsdom : la carte est remplacée, ses props sont gardées pour les tests
@@ -23,6 +24,11 @@ jest.mock('../../components/MapView', () => ({
 jest.mock('../../services/exportService', () => ({
   ...jest.requireActual('../../services/exportService'),
   exportStages: jest.fn(() => true),
+  downloadFile: jest.fn(),
+}));
+jest.mock('../../services/roadbookPdf', () => ({
+  buildRoadbookPdf: jest.fn(),
+  roadbookFilename: jest.requireActual('../../services/roadbookPdf').roadbookFilename,
 }));
 jest.mock('../../services/api', () => ({
   generateStage: jest.fn(),
@@ -404,17 +410,53 @@ describe('RouteGenerator Component', () => {
     });
   });
 
-  test.each(['A5', 'A4'])("imprimer en %s applique ce format avant d'ouvrir l'impression", async (label) => {
-    generateStage.mockResolvedValueOnce(response(['a']));
-    let pageAtPrint = null;
-    window.print = jest.fn(() => {
-      pageAtPrint = document.querySelector('.roadbook-print style').textContent;
+  test("télécharger le roadbook : popup dans l'ordre du rallye, noms modifiables, PDF choisi", async () => {
+    buildRoadbookPdf.mockResolvedValue({ output: () => new Blob(['%PDF']) });
+    window.history.replaceState(null, '', '/?name=Laventie&cp=62840&lat=50.6094&lon=2.7884&r=5&s=asphalt&l=medium&seed=1&o=2,1');
+    computeLiaisons.mockResolvedValueOnce({
+      ok: true,
+      liaisons: [{ from: 0, to: 1, ok: true, tier: 1, km: 10, minutes: 12, coordinates: [[6, 44.5], [6.1, 44.6]], warnings: [], roadbook: [] }],
     });
+    generateStage.mockResolvedValueOnce(response(['a', 'b']));
+    render(<RouteGenerator />);
+    await screen.findByText(/10\.0 km · ≈ 12 min/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Télécharger le roadbook/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Télécharger le roadbook' });
+    // Ordre du rallye : tracé 2 en ES1, puis la liaison, puis le tracé 1 en ES2 ; nom par défaut « ES1 »
+    const names = within(dialog).getAllByRole('textbox', { name: /Nom de l'ES/ });
+    expect(names.map((n) => n.value)).toEqual(['ES1', 'ES2']);
+    expect(within(dialog).getByText('Liaison ES1 → ES2')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Ville d'accueil")).toHaveValue('Laventie');
+
+    fireEvent.change(names[1], { target: { value: 'Mont des Cats' } });
+    fireEvent.change(within(dialog).getByLabelText('Nom du rallye'), { target: { value: 'Rallye des Routes du Nord' } });
+    fireEvent.click(within(dialog).getByLabelText(/A4/));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Télécharger le PDF' }));
+
+    await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(1));
+    const options = buildRoadbookPdf.mock.calls[0][0];
+    expect(options).toEqual(expect.objectContaining({ format: 'a4', rallyName: 'Rallye des Routes du Nord', hostTown: 'Laventie' }));
+    expect(options.items.map((i) => [i.kind, i.number, i.name])).toEqual([
+      ['stage', 1, 'ES1'],
+      ['liaison', 1, undefined],
+      ['stage', 2, 'Mont des Cats'],
+    ]);
+    expect(options.items[0].stage.id).toBe('b');
+    expect(options.items[1].minutes).toBe(15); // 10 km à 40 km/h
+    expect(downloadFile.mock.calls[0][1]).toBe('roadbook-rallye-des-routes-du-nord.pdf');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  test('le popup permet de retirer une épreuve, et se ferme sans rien télécharger', async () => {
+    generateStage.mockResolvedValueOnce(response(['a', 'b']));
     render(<RouteGenerator />);
     await screen.findByText('Nouvelle spéciale');
-
-    fireEvent.click(screen.getByRole('button', { name: label }));
-    expect(window.print).toHaveBeenCalledTimes(1);
-    expect(pageAtPrint).toContain(`size: ${label} portrait`);
+    fireEvent.click(screen.getByRole('button', { name: /Télécharger le roadbook/ }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Inclure ES2' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(buildRoadbookPdf).not.toHaveBeenCalled();
   });
 });

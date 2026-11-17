@@ -1,7 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import Roadbook from '../../components/Roadbook';
-import RoadbookPrint from '../../components/RoadbookPrint';
 import { mockStage } from '../fixtures/stage';
 
 describe('Roadbook Component', () => {
@@ -39,7 +38,7 @@ describe('Roadbook Component', () => {
   });
 });
 
-describe('RoadbookPrint Component', () => {
+describe('Roadbook : case sélectionnée', () => {
   test('devrait surligner la case affichée sur la carte, et elle seule', () => {
     const { rerender } = render(<Roadbook roadbook={mockStage.roadbook} selectedN={null} />);
     expect(screen.getAllByRole('button').filter((b) => b.getAttribute('aria-current'))).toHaveLength(0);
@@ -49,24 +48,5 @@ describe('RoadbookPrint Component', () => {
     expect(current).toHaveLength(1);
     expect(within(current[0]).getByText('2')).toBeInTheDocument();
     expect(current[0]).toHaveClass('selected');
-  });
-
-  test("devrait afficher l'en-tête de l'épreuve et toutes les cases", () => {
-    const { container } = render(<RoadbookPrint stage={mockStage} esNumber="3" esName="Laventie" />);
-
-    expect(screen.getByText('ES 3')).toBeInTheDocument();
-    expect(screen.getByText('Laventie')).toBeInTheDocument();
-    expect(screen.getByText(/12.50 km · Mixte \(20 % terre\)/)).toBeInTheDocument();
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(5);
-  });
-
-  test.each([
-    ['a5', 'A5 portrait', '72'],
-    ['a4', 'A4 portrait', '104'],
-  ])('format %s : page %s et tulipes adaptées', (format, page, tulipSize) => {
-    const { container } = render(<RoadbookPrint stage={mockStage} esNumber="1" format={format} />);
-    expect(container.querySelector('style').textContent).toContain(`size: ${page}`);
-    expect(container.querySelector('.roadbook-print')).toHaveClass(`format-${format}`);
-    expect(container.querySelector('svg.tulip')).toHaveAttribute('width', tulipSize);
   });
 });

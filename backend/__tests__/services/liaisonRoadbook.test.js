@@ -219,10 +219,18 @@ describe('Roadbook des liaisons : tulipe schématique', () => {
     const { tulip } = rb.find((c) => c.type === 'junction');
     expect(tulip.exit).toBeGreaterThan(15);
     expect(tulip.others).toHaveLength(1);
-    expect(Math.abs(tulip.others[0].angle - tulip.exit)).toBeGreaterThanOrEqual(30);
+    expect(Math.abs(tulip.others[0].angle - tulip.exit)).toBeGreaterThanOrEqual(40);
     expect(tulip.others[0].angle).toBeLessThan(tulip.exit); // reste du bon côté (à gauche de la flèche)
     expect(tulip.entryPath).toBeNull();
     expect(tulip.exitPath).toBeNull();
     expect(tulip.others[0].path).toBeNull();
+  });
+
+  test("fourche passée tout droit : une case (jugée sur les vrais angles), l'autre branche bien écartée", () => {
+    const p = fastestPath(net, at(P(0, 0)), at([Y[0] + 0.01, Y[1] + 0.0006]), new Set());
+    const rb = liaisonRoadbook(net, { lead: [], path: p, entryLink: null, uturn: false, nodeNotes: new Map(), fromEs: 'ES1', toEs: 'ES2' });
+    const fork = rb.find((c) => c.type === 'junction');
+    expect(fork.direction).toBe('Tout droit');
+    expect(Math.abs(fork.tulip.others[0].angle - fork.tulip.exit)).toBeGreaterThanOrEqual(40);
   });
 });

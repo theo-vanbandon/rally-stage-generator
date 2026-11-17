@@ -1059,6 +1059,8 @@ const BRANCH_CONTEXT_M = 60; // points IGN lus au-delà de la portée, pour conn
 const DRAW_STEP_M = 2.5; // pas des formes envoyées au front (courbes déjà lisses)
 const HAIRPIN_GAP_DEG = 25; // écart minimal dessiné entre arrivée et sortie d'une épingle
 const HAIRPIN_V_DEG = 150; // au-delà, l'épingle est dessinée en V droit
+const EXIT_MIN_REACH = 0.8; // la tête de la flèche de sortie va au moins jusque-là (rayon 1 = bord de la tulipe)
+const DRAW_GAP_DEG = 35; // écart minimal dessiné entre la flèche de sortie (tête comprise) et une autre route
 const ANGLE_AT_M = 40; // direction d'une route = vers le point de sa courbe situé 40 m plus loin
 const ENTRY_FREE_M = 12; // la route d'arrivée n'est jamais coupée sur ses 12 premiers mètres
 
@@ -1216,14 +1218,51 @@ function buildTulip({ branches, entryPts, exitPts, entrySeg = null, exitSeg = nu
     });
 
   const exitAngle = signedAngle(arrivalHeading, exitHeading);
+  const exitPath = reachEdge(openHairpin(tulipPath(exit.curve, arrivalHeading), exitAngle));
   return {
     entry: entry ? kindOf(entrySeg) : null,
     entryPath: entry ? tulipPath(entry.curve, arrivalHeading, { fromBelow: true }) : null,
     exit: Math.round(exitAngle),
     exitKind: kindOf(exitSeg),
-    exitPath: openHairpin(tulipPath(exit.curve, arrivalHeading), exitAngle),
-    others,
+    exitPath,
+    others: others.map((o) => ({ ...o, path: awayFromExit(o.path, exitPath) })),
   };
+}
+
+const roundPt = ([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100];
+const endBearing = (path) => (Math.atan2(path.at(-1)[0], path.at(-1)[1]) * 180) / Math.PI; // 0 = haut, + = droite
+
+/**
+ * Flèche qui tourne court (carrefour décalé : on monte un peu, puis on tourne) : sa tête resterait au milieu des
+ * autres routes. On la prolonge dans sa direction finale jusqu'au bord de la tulipe (dessin seulement).
+ */
+function reachEdge(path) {
+  if (path.length < 2) return path;
+  const end = path.at(-1);
+  if (Math.hypot(...end) >= EXIT_MIN_REACH) return path;
+  const from = path[Math.max(0, path.length - 4)];
+  const len = Math.hypot(end[0] - from[0], end[1] - from[1]);
+  if (len === 0) return path;
+  const d = [(end[0] - from[0]) / len, (end[1] - from[1]) / len];
+  // |end + t·d| = EXIT_MIN_REACH
+  const b = end[0] * d[0] + end[1] * d[1];
+  const t = -b + Math.sqrt(b * b - (end[0] ** 2 + end[1] ** 2 - EXIT_MIN_REACH ** 2));
+  if (!(t > 0)) return path;
+  return [...path, roundPt([end[0] + d[0] * t, end[1] + d[1] * t])];
+}
+
+/**
+ * Autre route qui finit presque dans l'axe de la flèche : elle se confondrait avec elle. On la fait pivoter autour
+ * du carrefour, de son côté, jusqu'à un écart lisible (dessin seulement ; son angle reste le vrai).
+ */
+function awayFromExit(path, exitPath) {
+  if (!path?.length || !exitPath?.length) return path;
+  const gap = ((endBearing(path) - endBearing(exitPath) + 540) % 360) - 180;
+  if (Math.abs(gap) >= DRAW_GAP_DEG) return path;
+  const side = gap >= 0 ? 1 : -1;
+  const rot = ((side * DRAW_GAP_DEG - gap) * Math.PI) / 180; // sens horaire positif (repère de la tulipe)
+  const [cos, sin] = [Math.cos(rot), Math.sin(rot)];
+  return path.map(([x, y]) => roundPt([x * cos + y * sin, -x * sin + y * cos]));
 }
 
 /**
