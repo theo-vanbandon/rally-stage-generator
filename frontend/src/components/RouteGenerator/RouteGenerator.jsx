@@ -5,6 +5,7 @@ import SpecialeStats from "../SpecialeStats";
 import CommuneSearch from "../CommuneSearch";
 import ElevationProfile from "../ElevationProfile";
 import Roadbook from "../Roadbook";
+import RoadbookPicker from "../RoadbookPicker";
 import RoadbookPrint, { PRINT_FORMATS } from "../RoadbookPrint";
 import LegalNotice from "../LegalNotice";
 import StageTabs from "../StageTabs";
@@ -18,6 +19,13 @@ import { generateStage, pingBackend } from "../../services/api";
 import { exportStages, exportFilename } from "../../services/exportService";
 import { cumulativeDistances, pointAtKm } from "../../utils/geometry";
 import "./RouteGenerator.css";
+
+// Temps imparti des liaisons : distance / moyenne imposée par l'organisateur (réglable)
+const DEFAULT_LIAISON_SPEED = 40;
+const MIN_LIAISON_SPEED = 20;
+const MAX_LIAISON_SPEED = 70;
+const clampSpeed = (v) => Math.min(MAX_LIAISON_SPEED, Math.max(MIN_LIAISON_SPEED, Math.round(Number(v)) || DEFAULT_LIAISON_SPEED));
+export const impartedMinutes = (km, speed) => Math.max(1, Math.ceil((km / clampSpeed(speed)) * 60));
 
 const SURFACES = [
   { value: "asphalt", label: "Asphalte" },
@@ -177,9 +185,10 @@ export default function RouteGenerator() {
   const [hoverKm, setHoverKm] = useState(null);
   // Case du roadbook sélectionnée (clic dans le roadbook ou sur la carte) ; fly : la carte s'y rend
   const [focusedCase, setFocusedCase] = useState(null);
+  // Roadbook affiché : null = celui de la spéciale sélectionnée ; sinon « es-<tracé> » ou « l-<position> » (liaison)
+  const [roadbookView, setRoadbookView] = useState(null);
+  const [liaisonSpeed, setLiaisonSpeed] = useState(DEFAULT_LIAISON_SPEED);
   const [copied, setCopied] = useState(false);
-  const [esNumber, setEsNumber] = useState("1");
-  const [esName, setEsName] = useState("");
   const [printFormat, setPrintFormat] = useState("a5");
   // Spéciales à exporter : null = le tracé affiché ; sinon les indices cochés
   const [exportPick, setExportPick] = useState(null);
@@ -250,6 +259,7 @@ export default function RouteGenerator() {
     setReversedTraces(traces);
     setHoverKm(null);
     setFocusedCase(null);
+    setRoadbookView(null);
     writeViewParams({ trace, reversedTraces: traces });
   }, []);
   const toggleReversed = () =>
@@ -257,6 +267,44 @@ export default function RouteGenerator() {
       selectedIndex,
       reversed ? reversedTraces.filter((i) => i !== selectedIndex) : [...reversedTraces, selectedIndex].sort((a, b) => a - b)
     );
+
+  // Roadbook affiché : spéciale sélectionnée par défaut, ou celui choisi dans le sélecteur (autre ES, liaison)
+  const viewKey = roadbookView ?? `es-${selectedIndex}`;
+  const viewedLiaison = viewKey.startsWith("l-")
+    ? liaisonState.liaisons.find((l) => l.from === Number(viewKey.slice(2)) && l.ok) ?? null
+    : null;
+  const viewedTrace = viewKey.startsWith("es-") ? Number(viewKey.slice(3)) : null;
+  const viewedStage = viewedTrace !== null ? displayedStages[viewedTrace] ?? stage : null;
+  const pickerItems = useMemo(
+    () =>
+      rallyOrder.flatMap((trace, position) => {
+        const es = { key: `es-${trace}`, label: `ES${position + 1}`, title: `Spéciale ES${position + 1} (tracé ${trace + 1})`, kind: "stage" };
+        if (position === rallyOrder.length - 1) return [es];
+        const liaison = liaisonState.liaisons.find((l) => l.from === position && l.ok);
+        return [
+          es,
+          {
+            key: `l-${position}`,
+            label: `L${position + 1}`,
+            title: liaison
+              ? `Liaison ES${position + 1} → ES${position + 2} (${liaison.km.toFixed(1)} km)`
+              : `Liaison ES${position + 1} → ES${position + 2} : calcul en cours`,
+            kind: "liaison",
+            disabled: !liaison?.roadbook,
+          },
+        ];
+      }),
+    [rallyOrder, liaisonState]
+  );
+  const selectCase = (c, fly) =>
+    setFocusedCase({
+      ...c,
+      fly,
+      view: viewKey,
+      label: viewedLiaison
+        ? `L${viewedLiaison.from + 1} · case ${c.n} — km ${c.km.toFixed(2)} — ${c.direction}${c.road ? ` (${c.road})` : ""}`
+        : undefined,
+    });
 
   const cumulative = useMemo(() => (stage ? cumulativeDistances(stage.geometry.coordinates) : []), [stage]);
   const hoverPoint = stage && hoverKm !== null ? pointAtKm(stage.geometry.coordinates, cumulative, hoverKm) : null;
@@ -498,34 +546,70 @@ export default function RouteGenerator() {
 
               <div className="block">
                 <h2>Roadbook</h2>
-                <div className="es-fields">
-                  <label>
-                    ES n°
-                    <input type="text" inputMode="numeric" value={esNumber} onChange={(e) => setEsNumber(e.target.value)} />
-                  </label>
-                  <label>
-                    Nom de l'épreuve
-                    <input
-                      type="text"
-                      value={esName}
-                      placeholder={commune?.name ?? "Spéciale"}
-                      onChange={(e) => setEsName(e.target.value)}
+                {pickerItems.length > 1 && (
+                  <RoadbookPicker
+                    items={pickerItems}
+                    value={viewKey}
+                    onChange={(key) => {
+                      setRoadbookView(key === `es-${selectedIndex}` ? null : key);
+                      setFocusedCase(null);
+                    }}
+                  />
+                )}
+                {viewedLiaison ? (
+                  <>
+                    <div className="liaison-roadbook-head">
+                      <p>
+                        <strong>
+                          Liaison ES{viewedLiaison.from + 1} → ES{viewedLiaison.to + 1}
+                        </strong>{" "}
+                        · {viewedLiaison.km.toFixed(1)} km · temps imparti{" "}
+                        <strong>{impartedMinutes(viewedLiaison.km, liaisonSpeed)} min</strong>
+                      </p>
+                      <label>
+                        Moyenne imposée
+                        <input
+                          type="number"
+                          min={MIN_LIAISON_SPEED}
+                          max={MAX_LIAISON_SPEED}
+                          step="5"
+                          value={liaisonSpeed}
+                          onChange={(e) => setLiaisonSpeed(e.target.value)}
+                          onBlur={() => setLiaisonSpeed(clampSpeed(liaisonSpeed))}
+                        />
+                        km/h
+                      </label>
+                      {viewedLiaison.warnings.length > 0 && (
+                        <p className="liaison-warning">⚠ {viewedLiaison.warnings.join(" · ")}</p>
+                      )}
+                    </div>
+                    <Roadbook
+                      roadbook={viewedLiaison.roadbook}
+                      selectedN={focusedCase?.view === viewKey ? focusedCase.n : null}
+                      onSelect={(c) => selectCase(c, true)}
                     />
-                  </label>
-                </div>
-                <Roadbook
-                  roadbook={stage.roadbook}
-                  selectedN={focusedCase?.n ?? null}
-                  onSelect={(c) => setFocusedCase({ ...c, fly: true })}
-                />
-                <div className="print-actions">
-                  <span>Imprimer le roadbook (ou PDF) :</span>
-                  {Object.entries(PRINT_FORMATS).map(([format, { label }]) => (
-                    <button key={format} type="button" className="print-button" onClick={() => printRoadbook(format)}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                  </>
+                ) : viewKey.startsWith("l-") ? (
+                  <p className="meta">
+                    {liaisonState.status === "loading" ? "Calcul de la liaison…" : "Liaison indisponible pour le moment."}
+                  </p>
+                ) : (
+                  <>
+                    <Roadbook
+                      roadbook={(viewedStage ?? stage).roadbook}
+                      selectedN={focusedCase?.view === viewKey ? focusedCase.n : null}
+                      onSelect={(c) => selectCase(c, true)}
+                    />
+                    <div className="print-actions">
+                      <span>Imprimer le roadbook (ou PDF) :</span>
+                      {Object.entries(PRINT_FORMATS).map(([format, { label }]) => (
+                        <button key={format} type="button" className="print-button" onClick={() => printRoadbook(format)}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="block">
@@ -586,12 +670,17 @@ export default function RouteGenerator() {
             selectedIndex={selectedIndex}
             onSelect={(i) => showView(i, reversedTraces)}
             liaisons={mapLiaisons}
+            focusedLiaison={viewedLiaison?.from ?? null}
             esNumbers={esNumbers}
             waterPoints={stageWater}
             searchArea={commune ? { lat: commune.lat, lon: commune.lon, radiusKm } : null}
             hoverPoint={hoverPoint}
             focusedCase={focusedCase}
-            onSelectCase={(c) => setFocusedCase({ ...c, fly: false })}
+            onSelectCase={(c) => {
+              // Case de la spéciale sélectionnée, cliquée sur la carte : on revient à son roadbook
+              setRoadbookView(null);
+              setFocusedCase({ ...c, fly: false, view: `es-${selectedIndex}` });
+            }}
           />
           {stage && (
             <MapLegend
@@ -613,10 +702,10 @@ export default function RouteGenerator() {
         {legalOpen && <LegalNotice onClose={() => showLegal(false)} />}
       </div>
       <RoadbookPrint
-        stage={stage}
-        esNumber={esNumber || "1"}
-        esName={esName || commune?.name}
-        reversed={reversed}
+        stage={viewedStage ?? stage}
+        esNumber={esNumbers[viewedTrace ?? selectedIndex] ?? 1}
+        esName={commune?.name}
+        reversed={reversedTraces.includes(viewedTrace ?? selectedIndex)}
         format={printFormat}
       />
     </>

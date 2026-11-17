@@ -42,3 +42,16 @@
 .tulip-arrow {
   fill: #000;
 }
+
+/* Rond-point : anneau blanc par-dessus le départ des routes, parcours en noir */
+.tulip-ring {
+  fill: #fff;
+  stroke: #333;
+  stroke-width: 4;
+}
+
+.tulip-ring-path {
+  fill: none;
+  stroke: #000;
+  stroke-width: 6;
+}

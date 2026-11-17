@@ -13,6 +13,8 @@
  *   5. dernier recours : une portion de spéciale est empruntée
  */
 const { haversineKm } = require("../utils/geometry");
+const { canDrive } = require("./roadNetwork");
+const { liaisonRoadbook, linkBetween } = require("./liaisonRoadbook");
 
 const coordKey = (c) => `${c[0]},${c[1]}`;
 const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
@@ -53,13 +55,6 @@ function linkCoords(network, link, from) {
   return network.linkFrom[link] === from ? pts : pts.reverse();
 }
 
-/** La route de liaison `link` peut-elle être prise depuis le nœud `from` ? (sens interdits) */
-function canDrive(network, link, from) {
-  const oneWay = network.linkOneWay[link];
-  if (oneWay === 0) return true;
-  const forward = network.linkFrom[link] === from;
-  return oneWay === 1 ? forward : !forward;
-}
 
 /** File de priorité minimale */
 class MinHeap {
@@ -213,17 +208,29 @@ function computeLiaisons(network, stages, { only = null, maxTier = TIERS.length 
     // Compromis à signaler
     const { path, tier } = found;
     const warnings = [];
-    if (noUturn !== null && path.nodes[1] === noUturn) warnings.push("demi-tour après le point stop");
+    const uturn = noUturn !== null && path.nodes[1] === noUturn;
+    if (uturn) warnings.push("demi-tour après le point stop");
     const inner = path.nodes.slice(1, -1);
+    // Observations du roadbook aux carrefours où la liaison touche une spéciale
+    const nodeNotes = new Map();
+    const noteAt = (n, note) => nodeNotes.set(n, [...(nodeNotes.get(n) ?? []), note]);
     nodeSets.forEach((set, k) => {
-      if (!inner.some((n) => set.has(n))) return;
+      const touched = inner.filter((n) => set.has(n));
+      if (!touched.length) return;
       const alongKm = path.links.reduce(
         (sum, link, j) => sum + (roadSets[k].has(pairKey(path.nodes[j], path.nodes[j + 1])) ? network.linkKm[link] : 0),
         0
       );
-      if (alongKm > 0) warnings.push(`emprunte ${alongKm.toFixed(1)} km de l'ES${k + 1} (aucun autre chemin dans la zone)`);
-      else if (k === i || k === i + 1) warnings.push(`traverse l'ES${k + 1} à un carrefour (point de traversée à organiser)`);
-      else warnings.push(`passe par l'ES${k + 1} : à faire en dehors de sa fermeture`);
+      if (alongKm > 0) {
+        warnings.push(`emprunte ${alongKm.toFixed(1)} km de l'ES${k + 1} (aucun autre chemin dans la zone)`);
+        noteAt(touched[0], `Emprunte l'ES${k + 1} sur ${alongKm.toFixed(1)} km`);
+      } else if (k === i || k === i + 1) {
+        warnings.push(`traverse l'ES${k + 1} à un carrefour (point de traversée à organiser)`);
+        touched.forEach((n) => noteAt(n, `Traversée de l'ES${k + 1} : point de traversée à organiser`));
+      } else {
+        warnings.push(`passe par l'ES${k + 1} : à faire en dehors de sa fermeture`);
+        noteAt(touched[0], `Passage par l'ES${k + 1} : en dehors de sa fermeture`);
+      }
     });
 
     const lead = ahead?.coords ?? [];
@@ -237,6 +244,15 @@ function computeLiaisons(network, stages, { only = null, maxTier = TIERS.length 
       coordinates: [...lead.slice(0, -1), ...path.coords],
       km: Math.round((leadKm + path.km) * 100) / 100,
       minutes: Math.max(1, Math.round((leadKm / AHEAD_SPEED_KMH + path.hours) * 60)),
+      roadbook: liaisonRoadbook(network, {
+        lead,
+        path,
+        entryLink: noUturn === null ? null : linkBetween(network, noUturn, source),
+        uturn,
+        nodeNotes,
+        fromEs: `ES${i + 1}`,
+        toEs: `ES${i + 2}`,
+      }),
     });
   }
   return liaisons;

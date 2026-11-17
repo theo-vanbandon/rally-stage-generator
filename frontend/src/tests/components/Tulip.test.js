@@ -83,4 +83,13 @@ describe('Tulip Component', () => {
     const ys = line.map(([, y]) => y);
     expect(ys).toEqual([...ys].sort((a, b) => b - a));
   });
+
+  test("rond-point : anneau et parcours dans le sens de circulation, jusqu'à la sortie", () => {
+    const roundabout = { entry: 'road', entryPath: null, exit: -90, exitKind: 'road', exitPath: null, roundabout: true, others: [{ angle: 0, kind: 'road', path: null }, { angle: 90, kind: 'road', path: null }] };
+    const { container } = render(<Tulip tulip={roundabout} />);
+    expect(container.querySelector('.tulip-ring')).toBeInTheDocument();
+    // Sortie à gauche : 3/4 de tour (grand arc), en partant par la droite (sens antihoraire)
+    expect(container.querySelector('.tulip-ring-path').getAttribute('d')).toMatch(/A 12 12 0 1 0 /);
+    expect(container.querySelectorAll('.tulip-road')).toHaveLength(2);
+  });
 });

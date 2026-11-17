@@ -84,6 +84,33 @@ function ExitArrow({ points }) {
 
 ExitArrow.propTypes = { points: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)).isRequired };
 
+const RING_R = 12; // rond-point : rayon de l'anneau dessiné
+
+/**
+ * Rond-point (liaisons) : anneau, et parcours en noir dans le sens de circulation (antihoraire vu du ciel : on
+ * part par la droite), de l'entrée (en bas) jusqu'à la sortie
+ */
+function Roundabout({ exit }) {
+  const at = (deg) => {
+    const a = (deg * Math.PI) / 180;
+    return [C + RING_R * Math.sin(a), CY - RING_R * Math.cos(a)];
+  };
+  const sweep = Math.min(359, Math.max(10, 180 - exit));
+  const [sx, sy] = at(180);
+  const [ex, ey] = at(180 - sweep);
+  return (
+    <>
+      <circle cx={C} cy={CY} r={RING_R} className="tulip-ring" />
+      <path
+        d={`M ${sx.toFixed(1)} ${sy.toFixed(1)} A ${RING_R} ${RING_R} 0 ${sweep > 180 ? 1 : 0} 0 ${ex.toFixed(1)} ${ey.toFixed(1)}`}
+        className="tulip-ring-path"
+      />
+    </>
+  );
+}
+
+Roundabout.propTypes = { exit: PropTypes.number.isRequired };
+
 /**
  * Tulipe de roadbook : le point en bas indique d'où l'on arrive, la flèche la route à prendre,
  * les traits fins les autres routes du carrefour (double trait = route principale, pointillés = piste).
@@ -105,6 +132,7 @@ export default function Tulip({ tulip, size = 64 }) {
       )}
       {!entry && <circle cx={C} cy={CY} r="5" className="tulip-dot" />}
       <ExitArrow points={branchPoints(tulip.exitPath, tulip.exit)} />
+      {tulip.roundabout && <Roundabout exit={tulip.exit} />}
     </svg>
   );
 }
@@ -114,6 +142,7 @@ Tulip.propTypes = {
     entry: PropTypes.string,
     entryPath: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)),
     exit: PropTypes.number.isRequired,
+    roundabout: PropTypes.bool,
     exitPath: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)),
     others: PropTypes.arrayOf(
       PropTypes.shape({

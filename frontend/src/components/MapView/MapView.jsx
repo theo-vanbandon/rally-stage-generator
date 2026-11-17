@@ -195,6 +195,25 @@ function FitToStage({ positions }) {
   return null;
 }
 
+/** Liaison dont le roadbook est affiché : trait plus épais */
+const liaisonStyle = (style, liaison, focusedLiaison) =>
+  liaison.from === focusedLiaison ? { ...style, weight: style.weight + 3 } : style;
+
+/** Recadre la carte sur la liaison dont on affiche le roadbook (une fois, quand on la choisit) */
+function FitToLiaison({ liaison }) {
+  const map = useMap();
+  const key = liaison ? `${liaison.from}|${liaison.coordinates.length}` : null;
+  useEffect(() => {
+    if (liaison?.coordinates.length) map.fitBounds(toLatLngs(liaison.coordinates), { padding: [40, 40] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, key]);
+  return null;
+}
+
+FitToLiaison.propTypes = {
+  liaison: PropTypes.shape({ from: PropTypes.number, coordinates: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)) }),
+};
+
 /** Centre la carte sur la case sélectionnée (clic dans le roadbook) ; chaque clic relance le vol */
 function FlyTo({ focus }) {
   const map = useMap();
@@ -258,6 +277,7 @@ export default function MapView({
   focusedCase = null,
   onSelectCase = () => {},
   liaisons = [],
+  focusedLiaison = null,
   esNumbers = [],
   waterPoints = [],
 }) {
@@ -304,10 +324,10 @@ export default function MapView({
 
       {liaisons.map((l) => (
         <React.Fragment key={`liaison-${l.from}`}>
-          <Polyline positions={toLatLngs(l.coordinates)} pathOptions={STYLES.liaisonCasing} />
+          <Polyline positions={toLatLngs(l.coordinates)} pathOptions={liaisonStyle(STYLES.liaisonCasing, l, focusedLiaison)} />
           <Polyline
             positions={toLatLngs(l.coordinates)}
-            pathOptions={l.warnings?.length ? { ...STYLES.liaison, dashArray: "8 7" } : STYLES.liaison}
+            pathOptions={liaisonStyle(l.warnings?.length ? { ...STYLES.liaison, dashArray: "8 7" } : STYLES.liaison, l, focusedLiaison)}
           >
             <Tooltip sticky>
               {l.label} — {l.km.toFixed(1)} km, ≈ {l.minutes} min
@@ -316,6 +336,7 @@ export default function MapView({
           </Polyline>
         </React.Fragment>
       ))}
+      <FitToLiaison liaison={liaisons.find((l) => l.from === focusedLiaison) ?? null} />
 
       {stages.map((s, i) =>
         esNumbers[i] ? (
@@ -485,6 +506,7 @@ MapView.propTypes = {
       minutes: PropTypes.number,
     })
   ),
+  focusedLiaison: PropTypes.number,
   esNumbers: PropTypes.arrayOf(PropTypes.number),
   waterPoints: PropTypes.arrayOf(
     PropTypes.shape({ level: PropTypes.string, km: PropTypes.number, coord: PropTypes.arrayOf(PropTypes.number) })

@@ -73,6 +73,7 @@ backend/
 │   ├── roadNetwork.js          # Graphe routier + caractérisation des tronçons
 │   ├── stageGenerator.js       # Marches aléatoires, notation, roadbook, altitude
 │   ├── liaisons.js             # Trajets point stop → départ suivant (Dijkstra, sens interdits)
+│   ├── liaisonRoadbook.js      # Roadbook des liaisons (cases aux seuls carrefours utiles, ronds-points)
 │   ├── water.js                # Vigilance eau : étendues d'eau importantes au bord du tracé (plongeurs)
 │   └── cache.js                # Cache LRU mémoire/disque
 ├── utils/
@@ -238,6 +239,8 @@ Liaisons entre les spéciales proposées, dans l'ordre du rallye choisi par l'ut
 }
 ```
 `tier` : niveau de compromis (1 = propre). `expandedKm` : présent quand la liaison a été calculée sur une zone élargie. `ok: false` n'arrive que si aucune route ne relie les deux spéciales dans les données (départ isolé du réseau).
+
+Chaque liaison calculée porte aussi son **`roadbook`**, au même format que celui des spéciales (cases `n`, `km`, `partial`, `direction`, `road`, `notes`, `tulip`…) : du point stop (case `stop`) au contrôle horaire de l'ES suivante (case `start`). Contrairement à une spéciale, une case n'est créée que là où le pilote doit agir : virage franc (≥ 30°), changement de route (numéro ou nom), fourche, croisement d'une route principale, traversée d'une spéciale (consigne en observation). Un rond-point donne une seule case, « Rond-point — 2e sortie », avec une tulipe schématique (`tulip.roundabout`). Le temps imparti (distance / moyenne imposée) est calculé par le front.
 
 ### `POST /api/water`
 

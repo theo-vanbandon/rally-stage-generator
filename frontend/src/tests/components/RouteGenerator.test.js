@@ -176,6 +176,45 @@ describe('RouteGenerator Component', () => {
       expect(screen.getByText(/8\.2 km · ≈ 11 min/)).toBeInTheDocument();
     });
 
+    test('le sélecteur du roadbook affiche une liaison, puis revient à la spéciale sélectionnée', async () => {
+      const liaisonCases = [
+        { n: 1, type: 'stop', km: 0, partial: 0, coord: [6, 44.5], direction: 'Point stop ES1 — départ liaison', angle: 0, road: null, notes: [], danger: 0, tulip: null },
+        { n: 2, type: 'junction', km: 1.2, partial: 1.2, coord: [6.05, 44.55], direction: 'Rond-point — 2e sortie', angle: 10, road: 'D945', notes: [], danger: 0, tulip: null },
+        { n: 3, type: 'start', km: 10, partial: 8.8, coord: [6.1, 44.6], direction: 'CH — Départ ES2', angle: 0, road: null, notes: [], danger: 0, tulip: null },
+      ];
+      computeLiaisons.mockResolvedValueOnce({
+        ok: true,
+        liaisons: [{ from: 0, to: 1, ok: true, tier: 1, km: 10, minutes: 12, coordinates: [[6, 44.5], [6.1, 44.6]], warnings: [], roadbook: liaisonCases }],
+      });
+      generateStage.mockResolvedValueOnce(response(['a', 'b']));
+      render(<RouteGenerator />);
+
+      const picker = await screen.findByRole('radiogroup', { name: 'Roadbook affiché' });
+      // Par défaut : la spéciale sélectionnée
+      expect(within(picker).getByRole('radio', { name: 'ES1' })).toHaveAttribute('aria-checked', 'true');
+      const l1 = within(picker).getByRole('radio', { name: 'L1' });
+      await waitFor(() => expect(l1).toBeEnabled());
+      fireEvent.click(l1);
+
+      expect(screen.getByText('Rond-point — 2e sortie')).toBeInTheDocument();
+      expect(screen.getByText('CH — Départ ES2')).toBeInTheDocument();
+      // 10 km à 40 km/h de moyenne : 15 min ; la moyenne se règle
+      expect(screen.getByText('15 min')).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText(/Moyenne imposée/), { target: { value: '30' } });
+      expect(screen.getByText('20 min')).toBeInTheDocument();
+      expect(lastMapProps().focusedLiaison).toBe(0);
+
+      // Une case de la liaison est montrée sur la carte
+      fireEvent.click(screen.getByText('Rond-point — 2e sortie'));
+      expect(lastMapProps().focusedCase).toEqual(expect.objectContaining({ n: 2, view: 'l-0', fly: true }));
+
+      // Choisir une spéciale sur la carte : retour à son roadbook
+      act(() => lastMapProps().onSelect(1));
+      expect(within(picker).getByRole('radio', { name: 'ES2' })).toHaveAttribute('aria-checked', 'true');
+      expect(screen.queryByText('CH — Départ ES2')).not.toBeInTheDocument();
+      expect(lastMapProps().focusedLiaison).toBeNull();
+    });
+
     test('signale une liaison impossible', async () => {
       computeLiaisons.mockResolvedValueOnce({ ok: true, liaisons: [{ from: 0, to: 1, ok: false }] });
       generateStage.mockResolvedValueOnce(response(['a', 'b']));

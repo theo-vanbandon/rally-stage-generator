@@ -9,7 +9,7 @@
  */
 const { haversineKm, bearing, signedAngle, createRng } = require("../utils/geometry");
 const { headingDeg, pointAtLength, curveLength, roadCurve } = require("../utils/curve");
-const { canDrive } = require("./liaisons");
+const { canDrive } = require("./roadNetwork");
 
 // pref : préférence par revêtement (0 = interdit)
 // unpaved : part de terre (empierré + chemin) exigée ; relaxedMin : plancher accepté si la zone en manque
@@ -1193,8 +1193,9 @@ function openHairpin(path, exitAngle) {
  * @param {number|null} params.entrySeg - Tronçon d'arrivée
  * @param {number|null} params.exitSeg - Tronçon de sortie
  * @param {Set|null} [params.stageSegs] - Tronçons de la spéciale dans le carrefour (exclus des autres routes)
+ * @param {boolean} [params.withSeg] - Garder le tronçon de chaque autre route (`seg`), à retirer avant envoi
  */
-function buildTulip({ branches, entryPts, exitPts, entrySeg = null, exitSeg = null, stageSegs = null }) {
+function buildTulip({ branches, entryPts, exitPts, entrySeg = null, exitSeg = null, stageSegs = null, withSeg = false }) {
   const exit = branchCurve(exitPts);
   const exitHeading = headingDeg(pointAtLength(exit.curve, ANGLE_AT_M));
   const entry = entryPts ? branchCurve(entryPts) : null;
@@ -1210,6 +1211,7 @@ function buildTulip({ branches, entryPts, exitPts, entrySeg = null, exitSeg = nu
         angle: Math.round(signedAngle(arrivalHeading, headingDeg(pointAtLength(curve, ANGLE_AT_M)))),
         kind: b.kind,
         path: tulipPath(curve, arrivalHeading),
+        ...(withSeg ? { seg: b.seg } : {}),
       };
     });
 
@@ -1222,6 +1224,25 @@ function buildTulip({ branches, entryPts, exitPts, entrySeg = null, exitSeg = nu
     exitPath: openHairpin(tulipPath(exit.curve, arrivalHeading), exitAngle),
     others,
   };
+}
+
+/**
+ * Routes d'un carrefour, éventuellement modélisé par plusieurs nœuds IGN proches (carrefour décalé, rond-point) :
+ * celles des nœuds secondaires sont replacées par rapport au premier nœud, le décalage est dessiné
+ */
+function groupBranches(network, groupNodes) {
+  const { nodes, projection } = network;
+  const [cx, cy] = projection.toXY(nodes[groupNodes[0]].coord);
+  return groupNodes.flatMap((n, idx) => {
+    if (idx === 0) return nodes[n].branches;
+    const [nx, ny] = projection.toXY(nodes[n].coord);
+    const off = [(nx - cx) * 1000, (ny - cy) * 1000];
+    return nodes[n].branches.map((b) => ({
+      seg: b.seg,
+      kind: b.kind,
+      pts: [off, ...shapeMetres(b.shape).map(([x, y]) => [x + off[0], y + off[1]])],
+    }));
+  });
 }
 
 /**
@@ -1503,21 +1524,10 @@ function describeStage(network, prefs, candidate, { closed = null } = {}) {
 
   function junctionCase(g) {
     const centerNode = g.nodes[0];
-    const [cx, cy] = projection.toXY(nodes[centerNode].coord);
     // Tronçons de la spéciale dans le carrefour : arrivée, liaisons entre nœuds, sortie
     const stageSegs = new Set();
     for (let k = g.firstStep - 1; k <= g.lastStep; k++) stageSegs.add(edges[steps[k].edge].seg);
-    // Routes des nœuds secondaires, replacées par rapport au premier nœud : le décalage est dessiné
-    const branches = g.nodes.flatMap((n, idx) => {
-      if (idx === 0) return nodes[n].branches;
-      const [nx, ny] = projection.toXY(nodes[n].coord);
-      const off = [(nx - cx) * 1000, (ny - cy) * 1000];
-      return nodes[n].branches.map((b) => ({
-        seg: b.seg,
-        kind: b.kind,
-        pts: [off, ...shapeMetres(b.shape).map(([x, y]) => [x + off[0], y + off[1]])],
-      }));
-    });
+    const branches = groupBranches(network, g.nodes);
     const exitEdge = edges[steps[g.lastStep].edge];
     const tulip = buildTulip({
       branches,
@@ -1936,7 +1946,10 @@ module.exports = {
   exitPath,
   escapes,
   buildTulip,
+  groupBranches,
   junctionNotes,
+  BRANCH_CONTEXT_M,
+  JUNCTION_CLUSTER_KM,
   describeStage,
   reverseCandidate,
   walkMetres,

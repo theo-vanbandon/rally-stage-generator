@@ -235,6 +235,23 @@ function linkSpeedKmh(seg) {
 /** Sens de circulation d'une route de liaison : 0 double sens, 1 sens de numérisation (a→b), -1 inverse (b→a) */
 const linkOneWay = (seg) => (seg.direction === "Sens direct" ? 1 : seg.direction === "Sens inverse" ? -1 : 0);
 
+/** La route de liaison `link` peut-elle être prise depuis le nœud `from` ? (sens interdits) */
+function canDrive(network, link, from) {
+  const oneWay = network.linkOneWay[link];
+  if (oneWay === 0) return true;
+  const forward = network.linkFrom[link] === from;
+  return oneWay === 1 ? forward : !forward;
+}
+
+/** Nom affiché d'une route de liaison (numéro, sinon nom de rue), null si inconnu */
+const linkLabel = (network, link) => {
+  const i = network.linkLabel?.[link] ?? -1;
+  return i < 0 ? null : network.labels[i];
+};
+
+/** La route de liaison `link` fait-elle partie d'un rond-point ? */
+const isRoundabout = (network, link) => network.linkRound?.[link] === 1;
+
 function isLinkRoad(seg) {
   if (seg.nature === "Chemin") return false;
   if (seg.private) return false;
@@ -290,6 +307,8 @@ class Branch {
  * - nodes[i].links / linkIds : voisins par le réseau de liaison (toutes routes publiques) et route empruntée
  * - linkGeometries[id] / linkFrom[id] / linkSeg[id] : tracé de chaque route de liaison, son nœud de départ, son tronçon
  * - linkKm[id] / linkSpeed[id] / linkOneWay[id] : longueur, vitesse estimée (km/h) et sens de circulation (liaisons)
+ * - linkLabel[id] (indice dans labels, -1 sinon) / linkRound[id] : numéro ou nom de la route, rond-point (roadbook
+ *   des liaisons). Les noms sont dédoublonnés : quelques milliers de chaînes pour 100 000 routes.
  * - nodes[i].branches : toutes les routes du carrefour { seg, kind, shape } pour les tulipes
  * - nodes[i].anchor : nœud relié au "reste du monde" (grand axe, agglomération, bord de la zone)
  * - nodes[i].border : nœud au bord de la zone téléchargée (sa route continue au-delà)
@@ -311,6 +330,21 @@ function buildNetwork(segments, center, { consume = false } = {}) {
   const linkKm = [];
   const linkSpeed = [];
   const linkOneWays = [];
+  const linkLabels = [];
+  const linkRounds = [];
+  const labels = [];
+  const labelIndex = new Map();
+  const labelOf = (seg) => {
+    const label = seg.ref || seg.name;
+    if (!label) return -1;
+    let i = labelIndex.get(label);
+    if (i === undefined) {
+      i = labels.length;
+      labels.push(label);
+      labelIndex.set(label, i);
+    }
+    return i;
+  };
   // Indices des tronçons gardés pour les spéciales (des indices et non les objets : ils peuvent ainsi être libérés)
   const kept = new Set(dropDenseUrbanAreas(segments, projection));
   const stageIndex = new Uint8Array(segments.length);
@@ -374,6 +408,8 @@ function buildNetwork(segments, center, { consume = false } = {}) {
       linkKm.push(lineLengthKm(seg.coords));
       linkSpeed.push(linkSpeedKmh(seg));
       linkOneWays.push(linkOneWay(seg));
+      linkLabels.push(labelOf(seg));
+      linkRounds.push(seg.nature === "Rond-point" ? 1 : 0);
       nodes[a].links.push(b);
       nodes[a].linkIds.push(linkId);
       nodes[b].links.push(a);
@@ -440,6 +476,9 @@ function buildNetwork(segments, center, { consume = false } = {}) {
     linkKm: Float32Array.from(linkKm),
     linkSpeed: Uint8Array.from(linkSpeed),
     linkOneWay: Int8Array.from(linkOneWays),
+    linkLabel: Int32Array.from(linkLabels),
+    linkRound: Uint8Array.from(linkRounds),
+    labels,
   };
 }
 
@@ -460,4 +499,4 @@ function markBorderAnchors(nodes, projection) {
   });
 }
 
-module.exports = { buildNetwork, dropDenseUrbanAreas, isDrivable, isLinkRoad, linkSpeedKmh, branchKind, branchShape, surfaceOf, basePreference, measureShape, fillElevations };
+module.exports = { buildNetwork, canDrive, linkLabel, isRoundabout, dropDenseUrbanAreas, isDrivable, isLinkRoad, linkSpeedKmh, branchKind, branchShape, surfaceOf, basePreference, measureShape, fillElevations };
