@@ -4,6 +4,7 @@
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:4000/api";
 const COMMUNES_URL = "https://geo.api.gouv.fr/communes";
+const DEPARTMENTS_URL = "https://geo.api.gouv.fr/departements";
 
 /**
  * Génère une spéciale de rallye
@@ -85,6 +86,53 @@ export async function searchCommunes(query, { signal } = {}) {
       lat: c.centre.coordinates[1],
       population: c.population ?? 0,
     }));
+}
+
+// Tirage au sort d'une commune : départements de métropole et de Corse, sans Paris ni la petite couronne (que de
+// la ville), et seulement des communes rurales. Une grande ville donnerait « zone trop dense » ou aucune spéciale.
+const RANDOM_DEPARTMENTS = [
+  ...Array.from({ length: 95 }, (_, i) => String(i + 1).padStart(2, "0")).filter((c) => !["20", "75", "92", "93", "94"].includes(c)),
+  "2A",
+  "2B",
+];
+export const RANDOM_POPULATION = [200, 5000];
+const RANDOM_ATTEMPTS = 3;
+
+/**
+ * Commune rurale tirée au hasard, partout en France métropolitaine : un département au hasard, puis une de ses
+ * communes rurales (requête légère : quelques centaines de communes)
+ * @param {{random?: () => number, signal?: AbortSignal}} [options] - random : tirage (Math.random par défaut)
+ * @returns {Promise<{name: string, postal: string, department: string, lat: number, lon: number, population: number}>}
+ */
+export async function randomCommune({ random = Math.random, signal } = {}) {
+  const pick = (list) => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
+  const [min, max] = RANDOM_POPULATION;
+  for (let attempt = 0; attempt < RANDOM_ATTEMPTS; attempt++) {
+    const department = pick(RANDOM_DEPARTMENTS);
+    const params = new URLSearchParams({ fields: "nom,codesPostaux,centre,population,codeDepartement" });
+    let res;
+    try {
+      res = await fetch(`${DEPARTMENTS_URL}/${department}/communes?${params}`, { signal });
+    } catch (err) {
+      if (err.name === "AbortError") throw err;
+      continue;
+    }
+    if (!res.ok) continue;
+    const rural = (await res.json()).filter(
+      (c) => c.centre && c.codesPostaux?.length && c.population >= min && c.population <= max
+    );
+    if (!rural.length) continue;
+    const c = pick(rural);
+    return {
+      name: c.nom,
+      postal: c.codesPostaux[0],
+      department: c.codeDepartement,
+      lon: c.centre.coordinates[0],
+      lat: c.centre.coordinates[1],
+      population: c.population,
+    };
+  }
+  throw new Error("Tirage au sort impossible pour le moment (service des communes indisponible). Réessaie dans un instant.");
 }
 
 /**

@@ -371,6 +371,35 @@ button.primary:disabled {
   }
 }
 
+/* « Pas d'idée ? » sous le champ Commune : discret, comme un lien */
+.random-commune {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  padding: 0.1rem 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.random-commune-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.random-commune:hover:not(:disabled) .random-commune-link {
+  color: var(--accent-strong);
+}
+
+.random-commune:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* Roadbook : téléchargement (popup) */
 .download-roadbook {
   display: flex;

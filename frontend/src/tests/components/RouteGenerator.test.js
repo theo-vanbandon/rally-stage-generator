@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import RouteGenerator from '../../components/RouteGenerator';
-import { generateStage, computeLiaisons, computeWaterPoints } from '../../services/api';
+import { generateStage, computeLiaisons, computeWaterPoints, randomCommune } from '../../services/api';
 import { exportStages, downloadFile } from '../../services/exportService';
 import { buildRoadbookPdf } from '../../services/roadbookPdf';
 import { mockStage } from '../fixtures/stage';
@@ -36,6 +36,7 @@ jest.mock('../../services/api', () => ({
   computeWaterPoints: jest.fn(),
   pingBackend: jest.fn(),
   searchCommunes: jest.fn(() => Promise.resolve([])),
+  randomCommune: jest.fn(),
 }));
 
 // Chaque tracé est livré avec son sens inverse (repérable ici par sa route)
@@ -458,5 +459,58 @@ describe('RouteGenerator Component', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(buildRoadbookPdf).not.toHaveBeenCalled();
+  });
+
+  describe("« Pas d'idée ? »", () => {
+    test('tire une commune, une longueur et une boucle au hasard, puis génère aussitôt', async () => {
+      window.history.replaceState(null, '', '/');
+      randomCommune.mockResolvedValueOnce({ name: 'Allanche', postal: '15160', department: '15', lat: 45.23, lon: 2.96, population: 773 });
+      // Longueur : 3e choix (longue) ; boucle : oui (≥ 0,5), par un carrefour (< 0,5)
+      const random = jest.spyOn(Math, 'random').mockReturnValueOnce(0.99).mockReturnValueOnce(0.7).mockReturnValueOnce(0.2);
+      generateStage.mockResolvedValueOnce(response(['a', 'b']));
+      render(<RouteGenerator />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Laisse le hasard choisir/ }));
+      await screen.findByText('Nouvelle spéciale');
+      random.mockRestore();
+      expect(generateStage).toHaveBeenCalledTimes(1);
+      expect(generateStage.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ place: 'Allanche', postal: '15160', lat: 45.23, lon: 2.96, surface: 'asphalt', length: 'long', loop: 'junction' })
+      );
+      await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('Allanche (15160)'));
+      // Le formulaire affiche les réglages tirés
+      expect(screen.getByRole('radio', { name: /Longue/ })).toBeChecked();
+      expect(screen.getByRole('radio', { name: /Carrefour/ })).toBeChecked();
+      expect(window.location.search).toContain('name=Allanche');
+    });
+
+    test("si la commune tirée ne permet pas de boucle, elle est régénérée sans boucle", async () => {
+      window.history.replaceState(null, '', '/');
+      randomCommune.mockResolvedValueOnce({ name: 'Allanche', postal: '15160', department: '15', lat: 45.23, lon: 2.96, population: 773 });
+      const random = jest.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0.9).mockReturnValueOnce(0.9);
+      generateStage
+        .mockRejectedValueOnce(new Error('Aucune spéciale avec boucle possible dans 10 km'))
+        .mockResolvedValueOnce(response(['a', 'b']));
+      render(<RouteGenerator />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Laisse le hasard choisir/ }));
+      await screen.findByText('Nouvelle spéciale');
+      random.mockRestore();
+      expect(generateStage.mock.calls.map(([p]) => [p.length, p.loop])).toEqual([
+        ['short', 'shared'],
+        ['short', false],
+      ]);
+      expect(screen.queryByText(/Aucune spéciale avec boucle/)).not.toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: /Sans/ })).toBeChecked();
+    });
+
+    test("affiche un message si le tirage échoue, sans rien générer", async () => {
+      window.history.replaceState(null, '', '/');
+      randomCommune.mockRejectedValueOnce(new Error('Tirage au sort impossible pour le moment.'));
+      render(<RouteGenerator />);
+      fireEvent.click(screen.getByRole('button', { name: /Laisse le hasard choisir/ }));
+      expect(await screen.findByText('Tirage au sort impossible pour le moment.')).toBeInTheDocument();
+      expect(generateStage).not.toHaveBeenCalled();
+    });
   });
 });

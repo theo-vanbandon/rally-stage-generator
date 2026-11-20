@@ -14,7 +14,7 @@ import WaterPoints from "../WaterPoints";
 import useWaterPoints from "../../hooks/useWaterPoints";
 import { waterLabel } from "../../utils/water";
 import useLiaisons from "../../hooks/useLiaisons";
-import { generateStage, pingBackend } from "../../services/api";
+import { generateStage, pingBackend, randomCommune } from "../../services/api";
 import { exportStages, exportFilename, downloadFile } from "../../services/exportService";
 import { cumulativeDistances, pointAtKm } from "../../utils/geometry";
 import "./RouteGenerator.css";
@@ -356,11 +356,13 @@ export default function RouteGenerator() {
     pingBackend();
   }, []);
 
+  // overrides : réglages à utiliser à la place de ceux du formulaire (tirage au sort : commune, longueur et boucle
+  // tirées, pas encore visibles dans l'état au moment de l'appel). Renvoie true si une spéciale a été générée.
   const generate = useCallback(
-    async (seed) => {
-      if (!commune) {
+    async (seed, { commune: target = commune, length: len = length, loop: lp = loop } = {}) => {
+      if (!target) {
         setErrorMsg("Choisis une commune dans la liste.");
-        return;
+        return false;
       }
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -371,23 +373,23 @@ export default function RouteGenerator() {
       setSlow(false);
       const slowTimer = setTimeout(() => setSlow(true), SLOW_HINT_MS);
 
-      const key = searchKey({ commune, radiusKm, surface, length, loop });
+      const key = searchKey({ commune: target, radiusKm, surface, length: len, loop: lp });
       const avoid = seenRef.current.key === key ? seenRef.current.ids : [];
 
       try {
         const data = await generateStage(
-          { place: commune.name, postal: commune.postal, lat: commune.lat, lon: commune.lon, radiusKm, surface, length, loop: loop === "none" ? false : loop, seed, avoid },
+          { place: target.name, postal: target.postal, lat: target.lat, lon: target.lon, radiusKm, surface, length: len, loop: lp === "none" ? false : lp, seed, avoid },
           { signal: controller.signal }
         );
         const shownIds = [data.stage, ...data.alternatives].map((s) => s.id);
         // Zone élargie par le serveur : le curseur suit, et les tracés vus valent pour cette nouvelle zone
-        const usedKey = searchKey({ commune, radiusKm: data.radiusKm, surface, length, loop });
+        const usedKey = searchKey({ commune: target, radiusKm: data.radiusKm, surface, length: len, loop: lp });
         const previous = usedKey === key ? avoid : [];
         seenRef.current = { key: usedKey, ids: [...previous.filter((id) => !shownIds.includes(id)), ...shownIds].slice(-MAX_SEEN) };
         if (data.radiusKm !== radiusKm) setRadiusKm(data.radiusKm);
         setResult(data);
         setExportPick(null);
-        writeUrlParams({ commune, radiusKm: data.radiusKm, surface, length, loop, seed: data.seed, avoid: previous });
+        writeUrlParams({ commune: target, radiusKm: data.radiusKm, surface, length: len, loop: lp, seed: data.seed, avoid: previous });
         // Nouvelle génération : premier tracé, tous dans le sens d'origine (sauf lien partagé)
         const view = pendingView.current ?? { trace: 0, reversedTraces: [], order: null };
         pendingView.current = null;
@@ -396,8 +398,10 @@ export default function RouteGenerator() {
         const order = validOrder(view.order, count);
         setRallyOrder(order);
         writeOrderParam(order);
+        return true;
       } catch (err) {
         if (err.name !== "AbortError") setErrorMsg(err.message || "Erreur inconnue");
+        return false;
       } finally {
         clearTimeout(slowTimer);
         if (abortRef.current === controller) setLoading(false);
@@ -405,6 +409,32 @@ export default function RouteGenerator() {
     },
     [commune, radiusKm, surface, length, loop, showView]
   );
+
+  // « Pas d'idée ? » : une commune rurale, une longueur et une boucle (une fois sur deux) tirées au hasard, puis
+  // génération directe ; le revêtement et la zone restent ceux du formulaire. Si la commune ne permet pas de
+  // boucle, on la régénère sans boucle plutôt que d'afficher un échec.
+  const [drawing, setDrawing] = useState(false);
+  const pickRandomCommune = async () => {
+    setDrawing(true);
+    setErrorMsg("");
+    try {
+      const drawn = await randomCommune();
+      const drawnLength = LENGTHS[Math.floor(Math.random() * LENGTHS.length)].value;
+      const drawnLoop = Math.random() < 0.5 ? "none" : Math.random() < 0.5 ? "junction" : "shared";
+      setCommune(drawn);
+      setLength(drawnLength);
+      setLoop(drawnLoop);
+      const ok = await generate(undefined, { commune: drawn, length: drawnLength, loop: drawnLoop });
+      if (!ok && drawnLoop !== "none") {
+        setLoop("none");
+        await generate(undefined, { commune: drawn, length: drawnLength, loop: "none" });
+      }
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setDrawing(false);
+    }
+  };
 
   // Lien partagé : on régénère la spéciale à l'identique au chargement
   const autoRun = useRef(Boolean(initial));
@@ -467,6 +497,9 @@ export default function RouteGenerator() {
             <div className="field">
               <label htmlFor="commune">Commune</label>
               <CommuneSearch value={commune} onSelect={setCommune} />
+              <button type="button" className="random-commune" onClick={pickRandomCommune} disabled={loading || drawing}>
+                Pas d'idée ? <span aria-hidden="true">🎲</span> <span className="random-commune-link">{drawing ? "Tirage au sort…" : "Laisse le hasard choisir"}</span>
+              </button>
             </div>
 
             <div className="field">
